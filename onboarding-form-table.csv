@@ -1,0 +1,24 @@
+﻿Step,Field,Input,Source
+1. Admin account,"Full name, designation",Text,Added
+1. Admin account,Email (this is the login),Email,Yours (login)
+1. Admin account,Password and confirm password,"Password, 10+ characters",Yours
+1. Admin account,Phone,Text,Added
+2. Organisation,"Nodal lab or institute name, city, state",Text,Added
+3. Project,Project title,Text,Added
+3. Project,"Short code, e.g. RBL-AMR (used in links and file names)","Text, unique",Added
+3. Project,"Objective, one paragraph",Text area,Added
+3. Project,Funding agency (optional),Text,Added
+3. Project,Start and end date (optional),Dates,Added
+3. Project,Sample type,"Wastewater, clinical, environmental, other",Added
+3. Project,Sampling frequency,"Weekly, fortnightly, monthly",Added
+3. Project,Ethics approval reference (optional),Text,Added
+4. qPCR setup,Multiplex kit,"Quantiplus ENV-AMR (8 tube), Quantiplus ENV-AMR V2 (15 tube), Quantiplus Waste Water Surveillance (10 tube); shows the target and fluorophore table per tube",Yours
+4. qPCR setup,qPCR instruments,"Checkboxes: QuantStudio 5, Bio-Rad CFX96, other",Yours (multi-select)
+4. qPCR setup,"Centres (optional list: name, city, contact email)",Table,Added
+4. qPCR setup,Number of users,"Fewer than 20, 20 to 50, 50 to 100, more than 100",Yours
+5. Plate layout,"Unknown replicates, positive controls, negative controls per tube",Numbers,Yours
+5. Plate layout,Plate layout,"96-well editor from a preset (8/15 tube: tubes in rows; 10 tube: tubes in columns), plus a preview with targets",Yours
+6. Data rules,Quality checks,"Checkboxes with editable thresholds (vrdl validation rules)",Yours
+6. Data rules,Compilation,"Checkboxes with editable thresholds (vrdl compilation rules)",Yours
+7. Analysis,Analysis required,"Data management, data compilation, data plotting (checkboxes)",Yours
+7. Analysis,Terms and data-sharing consent,"Checkbox, required",Added

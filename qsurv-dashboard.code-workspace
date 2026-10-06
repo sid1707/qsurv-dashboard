@@ -1,0 +1,11 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"path": "../vrdl-next-platform"
+		}
+	],
+	"settings": {}
+}

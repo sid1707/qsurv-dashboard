@@ -1,0 +1,31 @@
+* Block Type = 96-Well Block (0.2mL)
+* Experiment Name = C01_HuwelLab_Pune
+* Instrument Type = QuantStudio 5 System
+* Passive Reference = ROX
+
+[Results]
+Well,Well Position,Omit,Sample Name,Target Name,Task,Reporter,Quencher,CT,Ct Mean,Ct SD
+1,A1,false,WW_01102026,Target A,UNKNOWN,FAM,NFQ-MGB,24.512,,
+1,A1,false,WW_01102026,Target B,UNKNOWN,HEX,NFQ-MGB,27.118,,
+1,A1,false,WW_01102026,Internal Control,UNKNOWN,CY5,NFQ-MGB,25.301,,
+2,A2,false,WW_01102026,Target A,UNKNOWN,FAM,NFQ-MGB,24.731,,
+2,A2,false,WW_01102026,Target B,UNKNOWN,HEX,NFQ-MGB,27.305,,
+2,A2,false,WW_01102026,Internal Control,UNKNOWN,CY5,NFQ-MGB,25.122,,
+3,A3,false,WW_01102026,Target A,UNKNOWN,FAM,NFQ-MGB,24.402,,
+3,A3,false,WW_01102026,Target B,UNKNOWN,HEX,NFQ-MGB,26.988,,
+3,A3,false,WW_01102026,Internal Control,UNKNOWN,CY5,NFQ-MGB,25.410,,
+4,A4,false,WW_08102026,Target A,UNKNOWN,FAM,NFQ-MGB,24.512,,
+4,A4,false,WW_08102026,Target B,UNKNOWN,HEX,NFQ-MGB,27.118,,
+4,A4,false,WW_08102026,Internal Control,UNKNOWN,CY5,NFQ-MGB,25.301,,
+5,A5,false,WW_08102026,Target A,UNKNOWN,FAM,NFQ-MGB,24.731,,
+5,A5,false,WW_08102026,Target B,UNKNOWN,HEX,NFQ-MGB,27.305,,
+5,A5,false,WW_08102026,Internal Control,UNKNOWN,CY5,NFQ-MGB,25.122,,
+6,A6,false,WW_08102026,Target A,UNKNOWN,FAM,NFQ-MGB,24.402,,
+6,A6,false,WW_08102026,Target B,UNKNOWN,HEX,NFQ-MGB,26.988,,
+6,A6,false,WW_08102026,Internal Control,UNKNOWN,CY5,NFQ-MGB,25.410,,
+7,A7,false,PC,Target A,STANDARD,FAM,NFQ-MGB,21.904,,
+7,A7,false,PC,Target B,STANDARD,HEX,NFQ-MGB,22.417,,
+7,A7,false,PC,Internal Control,STANDARD,CY5,NFQ-MGB,24.880,,
+8,A8,false,NTC,Target A,NTC,FAM,NFQ-MGB,Undetermined,,
+8,A8,false,NTC,Target B,NTC,HEX,NFQ-MGB,Undetermined,,
+8,A8,false,NTC,Internal Control,NTC,CY5,NFQ-MGB,Undetermined,,
