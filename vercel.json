@@ -1,0 +1,13 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "nextjs",
+  "installCommand": "npm ci",
+  "buildCommand": "npm run build",
+  "regions": ["icn1"],
+  "functions": {
+    "app/api/uploads/validate/route.ts": { "maxDuration": 30 },
+    "app/api/uploads/submit/route.ts": { "maxDuration": 60 },
+    "app/api/projects/[code]/uploads/[uploadId]/approve/route.ts": { "maxDuration": 60 },
+    "app/api/projects/[code]/compiled/export/route.ts": { "maxDuration": 60 }
+  }
+}
