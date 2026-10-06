@@ -43,6 +43,11 @@ function toRuleSettings(value: unknown): RuleSettings {
       for (const [k, v] of Object.entries(raw.params)) if (typeof v === "number" && Number.isFinite(v)) params[k] = v
     }
     out[id] = { enabled: raw.enabled, params }
+    if (isPlainObject(raw.choices)) {
+      const choices: Record<string, string> = {}
+      for (const [k, v] of Object.entries(raw.choices)) if (typeof v === "string") choices[k] = v
+      out[id].choices = choices
+    }
   }
   return out
 }

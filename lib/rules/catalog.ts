@@ -8,7 +8,7 @@ import type { KitPanel } from "@/lib/kits/public"
  */
 
 export type RuleStage = "qc" | "compile"
-type Requirement = "exogenous_control" | "endogenous_control" | "std_curves"
+type Requirement = "exogenous_control" | "endogenous_control" | "std_curves" | "efficiency_curves"
 
 export type RuleParam = {
   key: string
@@ -18,6 +18,12 @@ export type RuleParam = {
   step: number
   default: number
 }
+
+/** One option of a choice. Options with a requirement are offered only for kits that meet it. */
+export type RuleOption = { value: string; label: string; description: string; requires?: Requirement }
+
+/** A setting picked from a list (rather than a number). The default must need nothing from the kit. */
+export type RuleChoice = { key: string; label: string; options: RuleOption[]; default: string }
 
 export type RuleDefinition = {
   id: string
@@ -32,14 +38,31 @@ export type RuleDefinition = {
   /** Per-target cut-offs from the kit replace the default for those targets. */
   targetOverrides?: boolean
   params: RuleParam[]
+  choices?: RuleChoice[]
 }
 
 export type RuleSetting = {
   enabled: boolean
   params: Record<string, number>
+  /** Only on rules with choices: the chosen option value per choice key. */
+  choices?: Record<string, string>
   targetOverrides?: Record<string, number>
 }
 export type RuleSettings = Record<string, RuleSetting>
+
+/** Values of the endogenous_normalization rule's method choice (stored in compile_rules). */
+export const NORMALIZATION_METHODS = {
+  twoPowerDeltaCt: "two_power_delta_ct",
+  efficiencyCorrected: "efficiency_corrected",
+  deltaCt: "delta_ct",
+} as const
+export type NormalizationMethod = (typeof NORMALIZATION_METHODS)[keyof typeof NORMALIZATION_METHODS]
+
+/** The project's method; settings saved before the choice existed mean 2^ΔCt. */
+export function normalizationMethodOf(setting: RuleSetting | null | undefined): NormalizationMethod {
+  const v = setting?.choices?.method
+  return (Object.values(NORMALIZATION_METHODS) as string[]).includes(v ?? "") ? (v as NormalizationMethod) : NORMALIZATION_METHODS.twoPowerDeltaCt
+}
 
 const ct = (label: string, value: number): RuleParam => ({ key: "ct", label, min: 0, max: 50, step: 0.5, default: value })
 
@@ -253,15 +276,42 @@ export const RULES: RuleDefinition[] = [
     id: "endogenous_normalization",
     stage: "compile",
     label: "Normalise to endogenous control",
-    description: "Reports each target relative to the endogenous control: 2^(control Ct − target Ct).",
+    description: "Reports each target relative to the endogenous control, by the method chosen below.",
     requires: "endogenous_control",
     params: [],
+    choices: [
+      {
+        key: "method",
+        label: "Method",
+        default: NORMALIZATION_METHODS.twoPowerDeltaCt,
+        options: [
+          {
+            value: NORMALIZATION_METHODS.twoPowerDeltaCt,
+            label: "Relative abundance, 2^ΔCt",
+            description:
+              "2^(control Ct − target Ct). Assumes every assay doubles each cycle (100% efficiency). Same as the AMR portal.",
+          },
+          {
+            value: NORMALIZATION_METHODS.efficiencyCorrected,
+            label: "Relative abundance, efficiency-corrected (Pfaffl)",
+            description:
+              "E_control^(control Ct) ÷ E_target^(target Ct), where each assay's amplification factor E = 10^(−1/slope) comes from its standard curve in the kit.",
+            requires: "efficiency_curves",
+          },
+          {
+            value: NORMALIZATION_METHODS.deltaCt,
+            label: "ΔCt",
+            description: "Target Ct − control Ct, on the Ct scale. Lower means more of the target relative to the control.",
+          },
+        ],
+      },
+    ],
   },
 ]
 
 export const RULES_BY_ID = new Map(RULES.map((r) => [r.id, r]))
 
-function meets(kit: Pick<KitPanel, "tubes">, requirement: Requirement | undefined) {
+function meets(kit: Pick<KitPanel, "tubes">, requirement: Requirement | undefined): boolean {
   const targets = kit.tubes.flatMap((t) => t.targets)
   switch (requirement) {
     case undefined:
@@ -273,7 +323,28 @@ function meets(kit: Pick<KitPanel, "tubes">, requirement: Requirement | undefine
       const measured = targets.filter((t) => t.controlType === "none")
       return measured.length > 0 && measured.every((t) => t.hasStdCurve)
     }
+    case "efficiency_curves": {
+      // Every measured target and the endogenous control need a slope.
+      const endogenous = targets.find((t) => t.controlType === "endogenous_control")
+      return Boolean(endogenous?.hasStdCurve) && meets(kit, "std_curves")
+    }
   }
+}
+
+/** Options of a choice that make sense for this kit. */
+export function availableOptions(kit: Pick<KitPanel, "tubes">, choice: RuleChoice) {
+  return choice.options.filter((o) => meets(kit, o.requires))
+}
+
+/** The kit's default for a choice when it is an available option, else the catalogue default. */
+function defaultChoices(kit: Pick<KitPanel, "tubes" | "ruleDefaults">, rule: RuleDefinition) {
+  if (!rule.choices?.length) return undefined
+  const out: Record<string, string> = {}
+  for (const choice of rule.choices) {
+    const fromKit = kit.ruleDefaults[rule.id]?.[choice.key]
+    out[choice.key] = availableOptions(kit, choice).some((o) => o.value === fromKit) ? (fromKit as string) : choice.default
+  }
+  return out
 }
 
 /** Rules that make sense for this kit, in catalogue order. */
@@ -294,14 +365,18 @@ function kitOverrides(kit: Pick<KitPanel, "ruleDefaults">, rule: RuleDefinition)
   return Object.keys(out).length > 0 ? out : undefined
 }
 
-function defaultSetting(kit: Pick<KitPanel, "ruleDefaults">, rule: RuleDefinition): RuleSetting {
+function defaultSetting(kit: Pick<KitPanel, "tubes" | "ruleDefaults">, rule: RuleDefinition): RuleSetting {
   const params: Record<string, number> = {}
   for (const p of rule.params) {
     const fromKit = kit.ruleDefaults[rule.id]?.[p.key]
     params[p.key] = inRange(p, fromKit) ? fromKit : p.default
   }
+  const setting: RuleSetting = { enabled: true, params }
+  const choices = defaultChoices(kit, rule)
+  if (choices) setting.choices = choices
   const overrides = kitOverrides(kit, rule)
-  return overrides ? { enabled: true, params, targetOverrides: overrides } : { enabled: true, params }
+  if (overrides) setting.targetOverrides = overrides
+  return setting
 }
 
 /** Every available rule switched on, with the kit's defaults. */
@@ -342,9 +417,22 @@ export function parseRuleSettings(
         if (enabled) errors[`${field}.${rule.id}.${p.key}`] = `${p.label} must be between ${p.min} and ${p.max}.`
       }
     }
-    data[rule.id] = fallback.targetOverrides
-      ? { enabled, params, targetOverrides: fallback.targetOverrides }
-      : { enabled, params }
+    const setting: RuleSetting = { enabled, params }
+    if (rule.choices?.length) {
+      const choices: Record<string, string> = {}
+      for (const choice of rule.choices) {
+        const v = given.choices?.[choice.key]
+        if (v !== undefined && availableOptions(kit, choice).some((o) => o.value === v)) {
+          choices[choice.key] = v
+        } else {
+          choices[choice.key] = fallback.choices![choice.key]
+          if (v !== undefined && enabled) errors[`${field}.${rule.id}.${choice.key}`] = `Choose one of the listed options for ${choice.label.toLowerCase()}.`
+        }
+      }
+      setting.choices = choices
+    }
+    if (fallback.targetOverrides) setting.targetOverrides = fallback.targetOverrides
+    data[rule.id] = setting
   }
 
   return Object.keys(errors).length > 0 ? { ok: false, errors } : { ok: true, data }

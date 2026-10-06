@@ -15,6 +15,7 @@ import {
 } from "@/lib/project-admin/compiled"
 import { requireProjectAdmin } from "@/lib/projects/context"
 import { ADMIN_PAGES } from "@/lib/projects/features"
+import { RULES_BY_ID, normalizationMethodOf } from "@/lib/rules/catalog"
 import { createClient } from "@/lib/supabase/server"
 
 export const dynamic = "force-dynamic"
@@ -45,6 +46,10 @@ export default async function CompiledDataPage({
   const base = projectAdminPath(project.code, "compiled")
   const search = filtersToSearch(filters)
   const pages = Math.max(1, Math.ceil(total / PAGE_SIZE))
+  const normalization = project.compile_rules?.endogenous_normalization
+  const method = normalization?.enabled
+    ? RULES_BY_ID.get("endogenous_normalization")?.choices?.[0].options.find((o) => o.value === normalizationMethodOf(normalization))
+    : undefined
   const pageHref = (p: number) => `${base}${search ? `${search}&` : "?"}page=${p + 1}`
 
   return (
@@ -54,6 +59,9 @@ export default async function CompiledDataPage({
           <h2 className="text-xl font-semibold">Compiled data</h2>
           <p className="mt-1 text-sm text-muted-foreground">
             One row per sample and target, from approved uploads. Control wells are left out.
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {method ? `Normalised: ${method.label} — ${method.description}` : "Normalisation to an endogenous control is off for this project."}
           </p>
         </div>
         <a

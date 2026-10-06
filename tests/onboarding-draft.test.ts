@@ -66,6 +66,20 @@ describe("onboarding draft", () => {
     expect(draft.values.centres).toEqual([])
   })
 
+  it("keeps a rule's chosen option, such as the normalisation method", () => {
+    const storage = memoryStorage()
+    const values = validValues()
+    values.compileRules = {
+      endogenous_normalization: { enabled: true, params: {}, choices: { method: "delta_ct", junk: 5 as unknown as string } },
+    }
+    saveDraft({ step: 3, values }, storage)
+    expect(loadDraft(storage).values.compileRules.endogenous_normalization).toEqual({
+      enabled: true,
+      params: {},
+      choices: { method: "delta_ct" },
+    })
+  })
+
   it("clears the draft", () => {
     const storage = memoryStorage()
     saveDraft({ step: 1, values: validValues() }, storage)

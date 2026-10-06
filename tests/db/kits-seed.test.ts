@@ -25,7 +25,7 @@ beforeAll(async () => {
      order by k.name, t.sort_order`
   )
   targets = result.rows
-})
+}, 60_000)
 
 const forKit = (name: string) => targets.filter((t) => t.kit === name)
 const tubes = (rows: TargetRow[]) => [...new Set(rows.map((t) => t.tube_order))]

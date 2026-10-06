@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { z } from "zod"
 import { parseDisplayDateToYmd } from "@/lib/format"
+import { NORMALIZATION_METHODS } from "@/lib/rules/catalog"
 
 /** Filters of the compiled data page and its CSV download, read from the URL. */
 export type CompiledFilters = { centre: string | null; from: string | null; to: string | null; target: string | null }
@@ -107,6 +108,14 @@ export async function listProjectCentres(supabase: SupabaseClient, projectId: st
 export const sourceFileOf = (row: CompiledRow) =>
   typeof row.metric_payload?.source_file === "string" ? (row.metric_payload.source_file as string) : null
 
+/** How the row's normalized_cq was calculated (rows compiled before the choice existed used 2^ΔCt). */
+export const normalizationMethodOfRow = (row: CompiledRow) =>
+  row.normalized_cq === null
+    ? null
+    : typeof row.metric_payload?.normalization_method === "string"
+      ? (row.metric_payload.normalization_method as string)
+      : NORMALIZATION_METHODS.twoPowerDeltaCt
+
 export const COMPILED_CSV_HEADERS = [
   "Centre_ID",
   "Centre_Name",
@@ -119,6 +128,7 @@ export const COMPILED_CSV_HEADERS = [
   "Copy_Number",
   "Copy_Number_SD",
   "Source_File",
+  "Normalization_Method",
 ] as const
 
 /**
@@ -152,6 +162,7 @@ export function compiledToCsv(rows: CompiledRow[], centres: CentreLabel[]): stri
         csvCell(n(r.copy_number)),
         csvCell(n(r.copy_number_sd)),
         csvCell(sourceFileOf(r)),
+        csvCell(normalizationMethodOfRow(r)),
       ].join(",")
     )
   }

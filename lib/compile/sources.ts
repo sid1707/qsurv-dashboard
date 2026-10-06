@@ -92,6 +92,7 @@ export function toMeasurement(target: CompiledTarget, source: CompileSource, sam
     readings: target.readings,
     replicates_used: target.replicatesUsed,
   }
+  if (target.normalizationMethod) payload.normalization_method = target.normalizationMethod
   if (target.lowCtReplaced.length > 0) payload.low_ct_replaced = target.lowCtReplaced
   if (target.outliersRemoved > 0) {
     payload.outliers_removed = target.outliersRemoved

@@ -2,6 +2,7 @@
 
 import type { KitPanel } from "@/lib/kits/public"
 import {
+  availableOptions,
   availableRules,
   type RuleDefinition,
   type RuleSetting,
@@ -55,6 +56,7 @@ export function RulesStep({
               return (
                 <RuleRow
                   key={rule.id}
+                  kit={kit}
                   rule={rule}
                   field={field}
                   setting={setting}
@@ -71,12 +73,14 @@ export function RulesStep({
 }
 
 function RuleRow({
+  kit,
   rule,
   field,
   setting,
   errors,
   onChange,
 }: {
+  kit: Pick<KitPanel, "tubes">
   rule: RuleDefinition
   field: string
   setting: RuleSetting
@@ -159,6 +163,54 @@ function RuleRow({
               })}
             </div>
           ) : null}
+
+          {enabled
+            ? (rule.choices ?? []).map((choice) => {
+                const key = `${id}.${choice.key}`
+                const options = availableOptions(kit, choice)
+                const selected = setting.choices?.[choice.key] ?? choice.default
+                return (
+                  <fieldset key={choice.key} className="mt-2 space-y-1.5" aria-describedby={errors[key] ? `${key}-error` : undefined}>
+                    <legend className="text-xs">{choice.label}</legend>
+                    {options.map((o) => {
+                      const optionId = `${key}.${o.value}`
+                      return (
+                        <div key={o.value} className="flex items-start gap-2">
+                          <input
+                            id={optionId}
+                            type="radio"
+                            name={key}
+                            value={o.value}
+                            checked={selected === o.value}
+                            aria-describedby={`${optionId}-description`}
+                            onChange={() => onChange({ ...setting, choices: { ...setting.choices, [choice.key]: o.value } }, key)}
+                            className="mt-0.5 size-4 shrink-0 accent-primary"
+                          />
+                          <div className="min-w-0">
+                            <label htmlFor={optionId} className="text-sm">
+                              {o.label}
+                            </label>
+                            <p id={`${optionId}-description`} className="text-xs text-muted-foreground">
+                              {o.description}
+                            </p>
+                          </div>
+                        </div>
+                      )
+                    })}
+                    {options.length < choice.options.length ? (
+                      <p className="text-xs text-muted-foreground">
+                        Other methods need standard curves for every target and the endogenous control in this kit.
+                      </p>
+                    ) : null}
+                    {errors[key] ? (
+                      <p id={`${key}-error`} className="text-xs text-destructive">
+                        {errors[key]}
+                      </p>
+                    ) : null}
+                  </fieldset>
+                )
+              })
+            : null}
 
           {enabled && setting.targetOverrides ? (
             <p className="mt-2 text-xs text-muted-foreground">

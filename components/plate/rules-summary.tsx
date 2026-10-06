@@ -12,9 +12,13 @@ export function RulesSummary({ title, settings }: { title: string; settings: Rul
         <ul className="mt-1 space-y-1 text-sm">
           {entries.map(([id, setting]) => {
             const rule = RULES_BY_ID.get(id)
-            const params = rule?.params
-              .map((p) => `${p.label}: ${setting.params?.[p.key] ?? p.default}`)
-              .join(", ")
+            const params = [
+              ...(rule?.params ?? []).map((p) => `${p.label}: ${setting.params?.[p.key] ?? p.default}`),
+              ...(rule?.choices ?? []).map((c) => {
+                const value = setting.choices?.[c.key] ?? c.default
+                return `${c.label}: ${c.options.find((o) => o.value === value)?.label ?? value}`
+              }),
+            ].join(", ")
             return (
               <li key={id} className={setting.enabled ? "" : "text-muted-foreground line-through"}>
                 {rule?.label ?? id}

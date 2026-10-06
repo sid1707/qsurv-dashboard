@@ -2,7 +2,9 @@ import { readFileSync } from "node:fs"
 import path from "node:path"
 import { describe, expect, it } from "vitest"
 import {
+  amplificationFactor,
   compileSampleCsv,
+  normalizeToControl,
   copiesFromStdCurve,
   populationSd,
   removeOutlierReplicates,
@@ -19,7 +21,7 @@ const RUN = readFileSync(path.join(RUNS, "C01_HuwelLab_Pune_01102026_quantstudio
 const ID = { A: "00000000-0000-4000-8000-00000000000a", B: "00000000-0000-4000-8000-00000000000b", IC: "00000000-0000-4000-8000-00000000000c" }
 
 /** The placeholder Huwel panel; the internal control's type and the curves vary per test. */
-function kit(opts: { icType?: string; curves?: boolean } = {}): CompileKitRow {
+function kit(opts: { icType?: string; curves?: boolean; icCurve?: boolean } = {}): CompileKitRow {
   const curve = (slope: number, intercept: number) => (opts.curves ? { std_slope: slope, std_intercept: intercept } : { std_slope: null, std_intercept: null })
   const row = (id: string, target_name: string, fluorophore: string, control_type: string, sort_order: number, c: { std_slope: number | null; std_intercept: number | null }) => ({
     id,
@@ -43,12 +45,12 @@ function kit(opts: { icType?: string; curves?: boolean } = {}): CompileKitRow {
     kit_targets: [
       row(ID.A, "Target A", "FAM", "none", 1, curve(-3.3, 40)),
       row(ID.B, "Target B", "HEX", "none", 2, curve(-3.4, 39)),
-      row(ID.IC, "Internal Control", "Cy5", opts.icType ?? "endogenous_control", 3, { std_slope: null, std_intercept: null }),
+      row(ID.IC, "Internal Control", "Cy5", opts.icType ?? "endogenous_control", 3, opts.icCurve ? { std_slope: -3.32, std_intercept: 38 } : { std_slope: null, std_intercept: null }),
     ],
   }
 }
 
-function setup(opts: { icType?: string; curves?: boolean; rules?: (r: RuleSettings) => void } = {}) {
+function setup(opts: { icType?: string; curves?: boolean; icCurve?: boolean; rules?: (r: RuleSettings) => void } = {}) {
   const base = buildCompileSetup(kit(opts), { plate_layout: null, compile_rules: null })
   if (opts.rules) opts.rules(base.rules)
   return base
@@ -167,6 +169,53 @@ describe("compileSampleCsv", () => {
     expect(compileSampleCsv("not a run", setup())).toMatchObject({ ok: false, skip: false, code: "PARSE_ERROR" })
     const controlsOnly = RUN.split("\n").filter((l) => !l.includes("UNKNOWN")).join("\n")
     expect(compileSampleCsv(controlsOnly, setup())).toMatchObject({ ok: false, skip: false, code: "NO_SAMPLE_ROWS" })
+  })
+})
+
+describe("normalisation methods", () => {
+  const method = (m: string) => (r: RuleSettings) => (r.endogenous_normalization.choices = { method: m })
+
+  it("records 2^ΔCt as the method by default", () => {
+    expect(byName(compiled(RUN).targets).get("Target A")!.normalizationMethod).toBe("two_power_delta_ct")
+  })
+
+  it("reports ΔCt as target Ct − control Ct, with 0 for the control itself", () => {
+    const t = byName(compiled(RUN, setup({ rules: method("delta_ct") })).targets)
+    expect(t.get("Target A")!.normalizedCq).toBe(-0.73)
+    expect(t.get("Internal Control")!.normalizedCq).toBe(0)
+    expect(t.get("Target A")!.normalizationMethod).toBe("delta_ct")
+  })
+
+  it("corrects for each assay's efficiency from the kit's standard curve slopes", () => {
+    const s = setup({ curves: true, icCurve: true, rules: method("efficiency_corrected") })
+    const t = byName(compiled(RUN, s).targets)
+    const eA = amplificationFactor(-3.3)
+    const eIC = amplificationFactor(-3.32)
+    expect(t.get("Target A")!.normalizedCq).toBe(roundSignificant(eIC ** 25.28 / eA ** 24.55))
+    expect(t.get("Internal Control")!.normalizedCq).toBe(1)
+    // Slopes of -3.3 and -3.32 are not exactly 100% efficient, so the result differs from 2^ΔCt (1.659).
+    expect(t.get("Target A")!.normalizedCq).not.toBe(1.659)
+  })
+
+  it("reduces to 2^ΔCt at exactly 100% efficiency", () => {
+    const perfect = amplificationFactor(-1 / Math.log10(2))
+    expect(perfect).toBeCloseTo(2, 12)
+    expect(normalizeToControl("efficiency_corrected", { cq: 24.55, controlCq: 25.28, undeterminedCt: 40, targetE: perfect, controlE: perfect })).toBe(
+      normalizeToControl("two_power_delta_ct", { cq: 24.55, controlCq: 25.28, undeterminedCt: 40 })
+    )
+  })
+
+  it("gives 0 for an undetermined control (as the AMR processor does), or an empty ΔCt", () => {
+    const base = { cq: 30, controlCq: 40, undeterminedCt: 40, targetE: 2, controlE: 2 }
+    expect(normalizeToControl("two_power_delta_ct", base)).toBe(0)
+    expect(normalizeToControl("efficiency_corrected", base)).toBe(0)
+    expect(normalizeToControl("delta_ct", base)).toBeNull()
+    expect(normalizeToControl("efficiency_corrected", { ...base, controlCq: 25, targetE: null })).toBeNull()
+  })
+
+  it("does not overflow on large Ct values", () => {
+    const v = normalizeToControl("efficiency_corrected", { cq: 40, controlCq: 39.9, undeterminedCt: 45, targetE: 1.9, controlE: 2.1 })
+    expect(Number.isFinite(v)).toBe(true)
   })
 })
 

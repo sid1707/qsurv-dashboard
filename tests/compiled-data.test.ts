@@ -68,14 +68,22 @@ describe("compiled data CSV", () => {
     expect(csvCell(null)).toBe("")
   })
 
-  it("writes one line per row with the centre's ID and name", () => {
-    const csv = compiledToCsv([row(), row({ id: 2, sample_label: null, normalized_cq: null, copy_number: 1200.5 })], [
+  it("writes one line per row with the centre's ID and name, and the normalisation method", () => {
+    const csv = compiledToCsv(
+      [
+        row(),
+        row({ id: 2, sample_label: null, normalized_cq: null, copy_number: 1200.5 }),
+        row({ id: 3, normalized_cq: -1.2, metric_payload: { source_file: "C01_run.csv", normalization_method: "delta_ct" } }),
+      ],
+      [
       { id: CENTRE, name: "AIIMS, Delhi", code: "C01" },
-    ])
+      ]
+    )
     expect(csv.split("\r\n")).toEqual([
-      "Centre_ID,Centre_Name,Collection_Date,Sample,Target,Cq,Cq_SD,Normalized_Cq,Copy_Number,Copy_Number_SD,Source_File",
-      'C01,"AIIMS, Delhi",2026-10-01,WW-01,Target A,24.55,0.14,1.659,,,C01_run.csv',
-      'C01,"AIIMS, Delhi",2026-10-01,,Target A,24.55,0.14,,1200.5,,C01_run.csv',
+      "Centre_ID,Centre_Name,Collection_Date,Sample,Target,Cq,Cq_SD,Normalized_Cq,Copy_Number,Copy_Number_SD,Source_File,Normalization_Method",
+      'C01,"AIIMS, Delhi",2026-10-01,WW-01,Target A,24.55,0.14,1.659,,,C01_run.csv,two_power_delta_ct',
+      'C01,"AIIMS, Delhi",2026-10-01,,Target A,24.55,0.14,,1200.5,,C01_run.csv,',
+      'C01,"AIIMS, Delhi",2026-10-01,WW-01,Target A,24.55,0.14,-1.2,,,C01_run.csv,delta_ct',
       "",
     ])
   })

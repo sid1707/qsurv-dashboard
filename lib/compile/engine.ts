@@ -13,6 +13,9 @@
  *     Task/Content column, else the project's plate layout.
  *   - Normalised values keep 4 significant figures instead of 2 decimals, so
  *     low relative abundances (1e-4 and below) do not round to 0.
+ *   - The normalisation method is the project's choice: 2^ΔCt (the AMR
+ *     processor), an efficiency-corrected ratio from the kit's standard
+ *     curves, or plain ΔCt. All are stored in normalized_cq.
  */
 
 import { isEndogenous, type KitTargetSpec } from "@/lib/validation/kit"
@@ -20,7 +23,7 @@ import { matchPlate } from "@/lib/validation/layout-check"
 import { parseCsvWithDynamicHeader, type ParsedCsv } from "@/lib/validation/parser"
 import { getControlSearchColumns } from "@/lib/validation/control-columns"
 import { CT_COLS, FLUOR_COLS, SAMPLE_COLS, TARGET_COLS, WELL_COLS, buildRows, formatCt, resolveColumn } from "@/lib/validation/rows"
-import type { RuleSetting } from "@/lib/rules/catalog"
+import { NORMALIZATION_METHODS, normalizationMethodOf, type NormalizationMethod, type RuleSetting } from "@/lib/rules/catalog"
 import type { CompileSetup } from "./setup"
 
 export type LowCtReplacement = { original: number; replacement: number; cutoff: number }
@@ -35,8 +38,9 @@ export type CompiledTarget = {
   /** Null when the copy-number rule is off or the target has no standard curve. */
   copyNumber: number | null
   copyNumberSd: number | null
-  /** 2^(endogenous Ct − target Ct); null when the normalisation rule is off. */
+  /** Relative to the endogenous control by the project's method; null when the normalisation rule is off. */
   normalizedCq: number | null
+  normalizationMethod: NormalizationMethod | null
   readings: number
   replicatesUsed: number
   lowCtReplaced: LowCtReplacement[]
@@ -105,6 +109,33 @@ export function removeOutlierReplicates(
   }
   const removed = values.length - kept.length
   return { values: kept, removed, reason: removed > 0 ? `SD > ${opts.maxSd}` : null }
+}
+
+/** Amplification factor per cycle from a standard curve slope: 2 at 100% efficiency (slope ≈ −3.32). */
+export const amplificationFactor = (slope: number) => 10 ** (-1 / slope)
+
+/**
+ * The value stored in normalized_cq for one target, given the control's and
+ * the target's mean Ct. Undetermined handling follows the AMR processor: an
+ * undetermined control gives 0 for the ratio methods (no ΔCt can be taken).
+ */
+export function normalizeToControl(
+  method: NormalizationMethod,
+  r: { cq: number; controlCq: number | null; undeterminedCt: number; targetE?: number | null; controlE?: number | null }
+): number | null {
+  const controlFailed = r.controlCq === null || r.controlCq >= r.undeterminedCt
+  switch (method) {
+    case NORMALIZATION_METHODS.deltaCt:
+      return controlFailed ? null : round2(r.cq - r.controlCq!)
+    case NORMALIZATION_METHODS.efficiencyCorrected: {
+      if (controlFailed) return 0
+      if (!r.targetE || !r.controlE) return null
+      // E_c^Ct_c / E_t^Ct_t, in logs so large Ct values do not overflow.
+      return roundSignificant(Math.exp(r.controlCq! * Math.log(r.controlE) - r.cq * Math.log(r.targetE)))
+    }
+    default:
+      return controlFailed ? 0 : roundSignificant(2 ** (r.controlCq! - r.cq))
+  }
 }
 
 /** Copies from a standard curve: Ct = slope · log10(copies) + intercept. Undetermined gives 0. */
@@ -213,6 +244,7 @@ export function compileSampleCsv(csvText: string, setup: CompileSetup): CompileS
       copyNumber,
       copyNumberSd,
       normalizedCq: null,
+      normalizationMethod: null,
       readings: all.length,
       replicatesUsed: values.length,
       lowCtReplaced: lowCtLogs.get(target) ?? [],
@@ -244,13 +276,26 @@ export function compileSampleCsv(csvText: string, setup: CompileSetup): CompileS
     }
   }
 
-  if (on("endogenous_normalization") && endogenous) {
-    const endoCq = endoRow?.cq ?? null
+  const normalization = on("endogenous_normalization")
+  if (normalization && endogenous) {
+    const method = normalizationMethodOf(normalization)
+    const controlCq = endoRow?.cq ?? null
+    const factor = (name: string) => {
+      const slope = setup.targets.get(name)?.stdSlope
+      return slope != null && slope < 0 ? amplificationFactor(slope) : null
+    }
+    const controlE = factor(endogenous.name)
     for (const row of compiled) {
-      if (row === endoRow) row.normalizedCq = row.cq !== null && row.cq < undeterminedCt ? 1 : 0
-      else if (row.cq === null) row.normalizedCq = null
-      else if (endoCq === null || endoCq >= undeterminedCt) row.normalizedCq = 0
-      else row.normalizedCq = roundSignificant(2 ** (endoCq - row.cq))
+      row.normalizationMethod = method
+      if (row === endoRow) {
+        // The control against itself: ratio 1 (0 when undetermined), ΔCt 0.
+        const determined = row.cq !== null && row.cq < undeterminedCt
+        row.normalizedCq = method === NORMALIZATION_METHODS.deltaCt ? (determined ? 0 : null) : determined ? 1 : 0
+      } else if (row.cq === null) {
+        row.normalizedCq = null
+      } else {
+        row.normalizedCq = normalizeToControl(method, { cq: row.cq, controlCq, undeterminedCt, targetE: factor(row.targetName), controlE })
+      }
     }
   }
 
