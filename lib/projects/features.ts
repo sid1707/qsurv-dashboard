@@ -32,17 +32,19 @@ export const ADMIN_PAGES: WorkspacePage[] = [
   { page: "", label: "Overview", feature: null },
   { page: "approvals", label: "Approvals", feature: "data_management" },
   { page: "compiled", label: "Compiled data", feature: "data_compilation" },
+  { page: "plots", label: "Plots", feature: "data_plotting" },
   { page: "centres", label: "Centres", feature: null },
   { page: "users", label: "Users", feature: null },
   { page: "announcements", label: "Announcements", feature: null },
   { page: "settings", label: "Settings", feature: null },
 ]
 
-/** Uploads and their validation are the data management feature. */
+/** Uploads and their validation are the data management feature; plots are read-only, own centre only. */
 export const CENTRE_PAGES: WorkspacePage[] = [
   { page: "upload", label: "Upload", feature: "data_management" },
   { page: "uploads", label: "My uploads", feature: "data_management" },
   { page: "validation", label: "Validation results", feature: "data_management" },
+  { page: "plots", label: "Plots", feature: "data_plotting" },
   { page: "announcements", label: "Announcements", feature: null },
   { page: "profile", label: "Profile", feature: null },
 ]
