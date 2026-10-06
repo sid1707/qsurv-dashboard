@@ -4,6 +4,7 @@ import { forbiddenFromAuth, jsonError, logUploadStage } from "@/lib/upload/api"
 import { centreIdentity, getCentreUploadContext, parseSampleDates } from "@/lib/upload/centre-context"
 import { checkRun, splitValidationIssues } from "@/lib/upload/run-check"
 import { loadValidationSetup } from "@/lib/validation/setup"
+import { RESULTS_MAX_BYTES } from "@/lib/upload/client-types"
 
 /** Checks a results export before anything is stored. From vrdl-next-platform app/api/uploads/validate. */
 export async function POST(request: Request) {
@@ -21,6 +22,9 @@ export async function POST(request: Request) {
   const file = form.get("results")
   if (!(file instanceof File) || file.size === 0) {
     return jsonError(400, { message: "Choose the results export (.csv).", code: "CSV_REQUIRED", stage: "validate" })
+  }
+  if (file.size > RESULTS_MAX_BYTES) {
+    return jsonError(413, { message: "The results export is larger than 5 MB. Check you chose the right file.", code: "CSV_TOO_LARGE", stage: "validate" })
   }
   const instrument = String(form.get("instrument") ?? "")
   if (!isInstrumentId(instrument) || !context.instruments.includes(instrument)) {

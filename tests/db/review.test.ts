@@ -141,8 +141,9 @@ describe("approve_project_request", () => {
       { name: "Centre B", city: null, contact_email: null },
     ])
     expect(outcome.memberships).toEqual([{ user_id: REQUESTER, role: "project_admin", centre_id: null }])
-    expect(outcome.audit).toHaveLength(1)
-    expect(outcome.audit[0]).toMatchObject({
+    // The admin's membership is audited by the membership trigger.
+    expect(outcome.audit.map((a) => a.event_type).sort()).toEqual(["membership.added", "project_request.approved"])
+    expect(outcome.audit.find((a) => a.event_type === "project_request.approved")).toMatchObject({
       event_type: "project_request.approved",
       actor_user_id: SUPER,
       payload: { project_code: "WW-PUNE", centres_created: 2 },

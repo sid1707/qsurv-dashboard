@@ -94,6 +94,18 @@ describe("POST /api/uploads/validate", () => {
     expect(await res.json()).toMatchObject({ code: "INVALID_INSTRUMENT" })
   })
 
+  it("refuses a results file over 5 MB before parsing it", async () => {
+    const form = new FormData()
+    form.set("projectCode", "HMP-PUNE")
+    form.set("results", new File([new Uint8Array(5 * 1024 * 1024 + 1)], "huge.csv", { type: "text/csv" }))
+    form.set("instrument", "quantstudio_5")
+    form.set("sampleCollectionDates", "01/10/2026")
+    const res = await validate(new Request("http://localhost/api/uploads/validate", { method: "POST", body: form }))
+    expect(res.status).toBe(413)
+    expect(await res.json()).toMatchObject({ code: "CSV_TOO_LARGE" })
+    expect(mocks.setup).not.toHaveBeenCalled()
+  })
+
   it("refuses people who are not centre users of the project", async () => {
     mocks.context.mockResolvedValue({ ok: false, reason: "not_centre_user" })
     const res = await validate(validateRequest("C01_HuwelLab_Pune_01102026_quantstudio5.csv"))

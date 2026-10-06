@@ -3,6 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js"
 import { isInstrumentId } from "@/lib/qpcr/instruments"
 import { checkRun, splitValidationIssues, type RunCheckResult } from "@/lib/upload/run-check"
 import { UPLOAD_BUCKET, buildUploadPath, isOwnUploadPath, type UploadFileKind } from "@/lib/upload/path"
+import { RESULTS_MAX_BYTES } from "@/lib/upload/client-types"
 import type { CentreFileIdentity } from "@/lib/validation/filename"
 import type { ValidationSetup } from "@/lib/validation/setup"
 import { ENGINE_VERSION, type ValidationIssue, type ValidationResult } from "@/lib/validation/types"
@@ -119,6 +120,9 @@ export async function finalizeUploadSubmit(input: FinalizeInput): Promise<Finali
   const { data: blob, error: downloadError } = await supabase.storage.from(input.results.bucket).download(input.results.storagePath)
   if (downloadError || !blob) {
     return { ok: false, code: "CSV_READ_FAILED", message: downloadError?.message ?? "Could not read the uploaded results file." }
+  }
+  if (blob.size > RESULTS_MAX_BYTES) {
+    return { ok: false, code: "CSV_READ_FAILED", message: "The results export is larger than 5 MB. Check you chose the right file." }
   }
   const csvText = await blob.text()
   const sha256 = createHash("sha256").update(csvText).digest("hex")

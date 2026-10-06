@@ -124,12 +124,16 @@ export async function inviteUserAction(code: string, _prev: ActionState, formDat
     }
   )
   if (!result.ok) return fail(result.message)
-  await session.audit({
-    eventType: result.invited ? "membership.invited" : "membership.added",
-    entityType: "user",
-    entityId: result.userId,
-    payload: { role: formData.get("role"), centre_id: formData.get("centreId") || null },
-  })
+  // The membership itself is audited by the database (membership.added); this
+  // records the one thing it cannot see, that an invite email went out.
+  if (result.invited) {
+    await session.audit({
+      eventType: "user.invited",
+      entityType: "user",
+      entityId: result.userId,
+      payload: { role: formData.get("role"), centre_id: formData.get("centreId") || null },
+    })
+  }
   refresh(code)
   return ok(result.message)
 }
@@ -143,13 +147,8 @@ export async function changeRoleAction(code: string, _prev: ActionState, formDat
     role: formData.get("role") ?? "",
     centreId: formData.get("centreId") ?? "",
   })
+  // Audited by the database (membership.role_changed, with the old and new role).
   if (!result.ok) return fail(result.message)
-  await session.audit({
-    eventType: "membership.role_changed",
-    entityType: "user",
-    entityId: result.userId,
-    payload: { role: formData.get("role"), centre_id: formData.get("centreId") || null },
-  })
   refresh(code)
   // An admin who made themselves a centre user no longer has this dashboard.
   if (result.userId === session.context.user.userId && formData.get("role") === "centre_user") {
@@ -163,8 +162,8 @@ export async function removeUserAction(code: string, membershipId: string): Prom
   if (!session) return fail(NOT_ALLOWED)
 
   const result = await removeMember(session.supabase, session.context.project.id, membershipId)
+  // Audited by the database (membership.removed).
   if (!result.ok) return fail(result.message)
-  await session.audit({ eventType: "membership.removed", entityType: "user", entityId: result.userId })
   refresh(code)
   if (result.userId === session.context.user.userId) redirect("/projects")
   return ok("User removed from the project.")

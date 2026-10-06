@@ -1,4 +1,4 @@
-import type { PGlite } from "@electric-sql/pglite"
+import type { PGlite, Transaction } from "@electric-sql/pglite"
 import { beforeAll, describe, expect, it } from "vitest"
 import { createMigratedDb, runAs } from "./harness"
 
@@ -93,13 +93,44 @@ describe("pipeline status", () => {
 })
 
 describe("upload files", () => {
-  it("records the results export as its own file kind", async () => {
-    await runAs(db, "authenticated", U.CA_USER, (tx) =>
-      tx.query(
-        `insert into public.upload_files (upload_batch_id, project_id, centre_id, file_kind, original_filename, storage_bucket, storage_path, sha256)
-         values ($1, $2, $3, 'results', 'run.csv', 'qsurv-files', 'PROJ-UP/x/run.csv', 'abc')`,
-        [BATCH, P, CA]
-      )
+  const OWN_PATH = `PROJ-UP/${CA}/${BATCH}/results/run.csv`
+  const insertFile = (tx: Transaction, path: string) =>
+    tx.query(
+      `insert into public.upload_files (upload_batch_id, project_id, centre_id, file_kind, original_filename, storage_bucket, storage_path, sha256)
+       values ($1, $2, $3, 'results', 'run.csv', 'qsurv-files', $4, 'abc')`,
+      [BATCH, P, CA, path]
     )
+
+  it("records the results export as its own file kind", async () => {
+    await runAs(db, "authenticated", U.CA_USER, (tx) => insertFile(tx, OWN_PATH))
+  })
+
+  it("refuses a file outside the upload's own folder", async () => {
+    for (const path of [`PROJ-UP/${CA}/other-upload/results/run.csv`, `PROJ-UP/${CA}/${BATCH}/runfile/run.csv`, `PROJ-UP/${CA}/${BATCH}/results/a/run.csv`]) {
+      const err = await errorOf(runAs(db, "authenticated", U.CA_USER, (tx) => insertFile(tx, path)))
+      expect(err.message, path).toMatch(/row-level security/)
+    }
+  })
+
+  it("does not let the uploader swap the file once the upload is submitted", async () => {
+    await runAs(db, "authenticated", U.CA_USER, async (tx) => {
+      await insertFile(tx, OWN_PATH)
+      await tx.query("set local role postgres")
+      await tx.query("update public.upload_batches set upload_status = 'uploaded', processing_status = 'completed' where id = $1", [BATCH])
+      await tx.query("set local role authenticated")
+      const { affectedRows } = await tx.query(
+        "update public.upload_files set storage_path = $2 where upload_batch_id = $1",
+        [BATCH, `PROJ-UP/${CA}/${BATCH}/results/unchecked.csv`]
+      )
+      expect(affectedRows).toBe(0)
+      const err = await errorOf(
+        tx.query(
+          `insert into public.upload_files (upload_batch_id, project_id, centre_id, file_kind, original_filename, storage_bucket, storage_path)
+           values ($1, $2, $3, 'runfile', 'run.eds', 'qsurv-files', $4)`,
+          [BATCH, P, CA, `PROJ-UP/${CA}/${BATCH}/runfile/run.eds`]
+        )
+      )
+      expect(err.message).toMatch(/row-level security/)
+    })
   })
 })

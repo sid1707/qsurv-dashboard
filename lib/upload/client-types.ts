@@ -7,6 +7,9 @@ export type { ValidationIssue }
 
 export const NOTES_MAX_LENGTH = 1000
 
+/** A qPCR results export is well under 1 MB; anything larger is refused before it is parsed. */
+export const RESULTS_MAX_BYTES = 5 * 1024 * 1024
+
 export type UploadPipelineStage = "validating" | "starting_batch" | "uploading_results" | "uploading_runfile" | "submitting" | "done"
 
 export type PipelineFailure = {

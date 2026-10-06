@@ -364,7 +364,9 @@ describe("project admin", () => {
       await select(tx, "select project_id from public.audit_events"),
     ])
     expect(announcements.map((r) => r.id)).toEqual([ANN.P1_ALL, ANN.P1_C1B_ONLY, ANN.P1_ARCHIVED])
-    expect(audit.map((r) => r.project_id)).toEqual([P1])
+    // The seeded event plus the membership.added rows from the fixture.
+    expect(audit.length).toBeGreaterThan(1)
+    expect(new Set(audit.map((r) => r.project_id))).toEqual(new Set([P1]))
   })
 
   it("sees profiles of their project's members only", async () => {
