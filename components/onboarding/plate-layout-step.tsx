@@ -9,17 +9,16 @@ import { PlateGrid } from "@/components/plate/plate-grid"
 import type { KitSummary } from "@/lib/kits/public"
 import {
   MAX_SAMPLES_PER_PLATE,
-  MULTI_SAMPLE_MODES,
   SAMPLE_IDENTIFIER_COLUMNS,
   WELL_ROLES,
   countRolesByTube,
+  expandLayout,
   layoutCapacity,
   paintWell,
   presetLayout,
   samplesPerPlate,
   totalWellsPerTube,
   type LayoutCounts,
-  type MultiSampleMode,
   type PlateLayout,
   type WellRole,
 } from "@/lib/plate/layout"
@@ -53,42 +52,29 @@ export function PlateLayoutStep({
     pc: String(layout.counts.pc),
     nc: String(layout.counts.nc),
   }))
-  const [samples, setSamples] = useState(samplesPerPlate(layout.counts))
-  const [sampleMode, setSampleMode] = useState<MultiSampleMode>(layout.multiSample?.mode ?? "dates")
-  const [mode, setMode] = useState<"edit" | "preview">("edit")
+  const [mode, setMode] = useState<"edit" | "preview" | "multi">("edit")
   const [brush, setBrush] = useState<Brush>({ tube: kit.tubes[0]?.name ?? "", role: "unknown" })
 
-  const toCounts = (c: Record<string, string>, n: number): LayoutCounts => ({
+  const toCounts = (c: Record<string, string>): LayoutCounts => ({
     unknownReplicates: Number(c.unknownReplicates),
     pc: Number(c.pc),
     nc: Number(c.nc),
-    samples: n,
   })
   const fits = (c: LayoutCounts) =>
     COUNT_FIELDS.every((f) => Number.isInteger(c[f.key]) && c[f.key] >= f.min) && totalWellsPerTube(c) <= capacity
-  const parsedCounts = toCounts(counts, samples)
+  const parsedCounts = toCounts(counts)
   const countsValid = fits(parsedCounts)
-  // Most samples whose replicates and the controls still fit in one tube's wells.
-  const maxSamples = Math.max(
-    1,
-    Math.min(
-      MAX_SAMPLES_PER_PLATE,
-      Math.floor((capacity - parsedCounts.pc - parsedCounts.nc) / Math.max(1, parsedCounts.unknownReplicates))
-    )
-  )
 
-  /** Any change to the counts or samples resets the plate to the preset. */
-  function apply(nextCounts: Record<string, string>, nextSamples: number, nextMode: MultiSampleMode) {
-    setCounts(nextCounts)
-    setSamples(nextSamples)
-    setSampleMode(nextMode)
-    const parsed = toCounts(nextCounts, nextSamples)
-    if (fits(parsed)) onChange(presetLayout(kit, parsed, nextMode))
-  }
-
+  /** Any change to the counts resets the plate to the preset. */
   function updateCount(key: string, value: string) {
-    apply({ ...counts, [key]: value }, samples, sampleMode)
+    const next = { ...counts, [key]: value }
+    setCounts(next)
+    const parsed = toCounts(next)
+    if (fits(parsed)) onChange(presetLayout(kit, parsed))
   }
+
+  // How the plate looks when a centre runs two samples on it (chosen on each upload).
+  const twoSamples = expandLayout(layout, { samples: 2, mode: "dates" })
 
   const tubeIndex = new Map(kit.tubes.map((t, i) => [t.name, i]))
   const roleCounts = countRolesByTube(layout)
@@ -124,97 +110,23 @@ export function PlateLayoutStep({
         </div>
         {!countsValid ? (
           <p className="mt-2 text-xs text-destructive">
-            Use whole numbers (at least 1 unknown replicate) adding up to {capacity} wells or fewer per tube
-            {samples > 1 ? `, counting the replicates of all ${samples} samples` : ""}.
+            Use whole numbers (at least 1 unknown replicate) adding up to {capacity} wells or fewer per tube.
           </p>
         ) : null}
-      </fieldset>
-
-      <fieldset className="space-y-3 rounded-md border p-4">
-        <legend className="px-1 text-sm font-medium">Samples per plate</legend>
-        <label className="flex items-start gap-2 text-sm">
-          <input
-            type="checkbox"
-            className="mt-0.5 size-4"
-            checked={samples > 1}
-            disabled={samples === 1 && maxSamples < 2}
-            onChange={(e) => apply(counts, e.target.checked ? 2 : 1, sampleMode)}
-          />
-          <span>
-            Run more than one sample on one 96-well plate
-            <span className="block text-xs text-muted-foreground">
-              {maxSamples < 2 && samples === 1
-                ? `A second set of ${parsedCounts.unknownReplicates} replicates does not fit in ${capacity} wells per tube with these controls.`
-                : "Each sample gets its own set of unknown replicates in every tube, sharing the plate's controls. The samples can sit in any of the unknown wells."}
-            </span>
-          </span>
-        </label>
-
-        {samples > 1 ? (
-          <div className="space-y-3 pl-6">
-            <label className="flex items-center gap-2 text-sm">
-              Samples on each plate
-              <select
-                value={samples}
-                onChange={(e) => apply(counts, Number(e.target.value), sampleMode)}
-                className="h-9 rounded-md border bg-background px-2 text-sm"
-              >
-                {Array.from({ length: Math.max(2, maxSamples) - 1 }, (_, i) => i + 2).map((n) => (
-                  <option key={n} value={n}>
-                    {n}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <div role="radiogroup" aria-label="What the samples on a plate are" className="grid gap-2 sm:grid-cols-2">
-              {MULTI_SAMPLE_MODES.map((m) => (
-                <label
-                  key={m.value}
-                  className={cn(
-                    "flex cursor-pointer items-start gap-2 rounded-md border p-3 text-sm",
-                    sampleMode === m.value && "border-primary"
-                  )}
-                >
-                  <input
-                    type="radio"
-                    name="multiSampleMode"
-                    className="mt-0.5"
-                    checked={sampleMode === m.value}
-                    onChange={() => apply(counts, samples, m.value)}
-                  />
-                  <span>
-                    {m.label}
-                    <span className="block text-xs text-muted-foreground">{m.description}</span>
-                  </span>
-                </label>
-              ))}
-            </div>
-
-            <p role="note" className="rounded-md border bg-muted/40 p-3 text-xs">
-              Runs are split into one file per sample by each sample&apos;s identifier, not by well, before they are
-              checked and compiled, as in the AMR portal. Centres must put each sample&apos;s identifier in the{" "}
-              {SAMPLE_IDENTIFIER_COLUMNS.map((c, i) => (
-                <span key={c}>
-                  {i > 0 ? (i === SAMPLE_IDENTIFIER_COLUMNS.length - 1 ? " or " : ", ") : ""}
-                  <strong>{c}</strong>
-                </span>
-              ))}{" "}
-              column of the exported CSV
-              {sampleMode === "dates"
-                ? ": the sample's collection date as DDMMYY or DDMMYYYY (e.g. 01102026, or WW_01102026)."
-                : ": a site label that is the same in all of that sample's wells (e.g. ETP, STP)."}
-            </p>
-          </div>
-        ) : null}
+        <p className="mt-2 text-xs text-muted-foreground">
+          This is the layout for one sample per plate. Centres can run up to {MAX_SAMPLES_PER_PLATE} samples (from
+          multiple dates or multiple sites) on one plate by choosing the plate composition when they upload; see
+          Multiple samples below.
+        </p>
       </fieldset>
 
       <div>
-        <div role="group" aria-label="Plate layout view" className="inline-flex rounded-md border p-0.5">
+        <div role="group" aria-label="Plate layout view" className="inline-flex flex-wrap rounded-md border p-0.5">
           {(
             [
               ["edit", "Edit layout"],
               ["preview", "Preview with targets"],
+              ["multi", "Multiple samples"],
             ] as const
           ).map(([value, label]) => (
             <button
@@ -297,7 +209,7 @@ export function PlateLayoutStep({
                   size="sm"
                   className="h-9"
                   disabled={!countsValid}
-                  onClick={() => onChange(presetLayout(kit, parsedCounts, sampleMode))}
+                  onClick={() => onChange(presetLayout(kit, parsedCounts))}
                 >
                   <RotateCcw aria-hidden /> Reset to preset
                 </Button>
@@ -331,9 +243,33 @@ export function PlateLayoutStep({
 
             <TubeTally kit={kit} roleCounts={roleCounts} counts={layout.counts} />
           </div>
-        ) : (
+        ) : mode === "preview" ? (
           <div className="mt-4">
             <LayoutPreview tubes={kit.tubes} layout={layout} />
+          </div>
+        ) : (
+          <div className="mt-4 space-y-3">
+            <p className="text-xs text-muted-foreground">
+              When a centre runs two samples on one plate, each tube gets a second set of{" "}
+              {layout.counts.unknownReplicates} unknown wells right after the first, and the controls move along. Runs
+              with several samples are split into one file per sample by each sample&apos;s identifier in the{" "}
+              {SAMPLE_IDENTIFIER_COLUMNS.join(", ").replace(/, ([^,]*)$/, " or $1")} column: its collection date for
+              multiple dates, or a site label (e.g. ETP, STP) for multiple sites.
+            </p>
+            {twoSamples ? (
+              <LayoutPreview
+                tubes={kit.tubes}
+                layout={twoSamples.layout}
+                sampleWells={twoSamples.sampleWells}
+                showMode={false}
+              />
+            ) : (
+              <p className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200">
+                A second sample does not fit: it needs {layout.counts.unknownReplicates} more wells after each
+                tube&apos;s last well in its {tubesAxis}. With this layout centres can only run one sample per plate.
+                Use fewer replicates or controls, or leave space after each tube, to allow more.
+              </p>
+            )}
           </div>
         )}
       </div>

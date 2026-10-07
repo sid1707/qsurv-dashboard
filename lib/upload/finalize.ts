@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto"
 import type { SupabaseClient } from "@supabase/supabase-js"
+import { SINGLE_SAMPLE, parsePlateComposition } from "@/lib/plate/layout"
 import { isInstrumentId } from "@/lib/qpcr/instruments"
 import { checkRun, splitValidationIssues, type RunCheckResult } from "@/lib/upload/run-check"
 import { UPLOAD_BUCKET, buildUploadPath, isOwnUploadPath, type UploadFileKind } from "@/lib/upload/path"
@@ -76,7 +77,12 @@ type Batch = {
   instrument: string | null
   sample_collection_date: string | null
   sample_collection_dates: string[] | null
+  plate_samples: number | null
+  plate_mode: string | null
 }
+
+/** The composition chosen when the batch was started; batches from before it was stored held one sample. */
+const batchComposition = (b: Batch) => parsePlateComposition(b.plate_samples, b.plate_mode) ?? SINGLE_SAMPLE
 
 const batchDates = (b: Batch) =>
   (b.sample_collection_dates?.length ? b.sample_collection_dates : b.sample_collection_date ? [b.sample_collection_date] : []).map((d) =>
@@ -96,7 +102,7 @@ export async function finalizeUploadSubmit(input: FinalizeInput): Promise<Finali
 
   const { data: batch } = await supabase
     .from("upload_batches")
-    .select("id, upload_status, instrument, sample_collection_date, sample_collection_dates")
+    .select("id, upload_status, instrument, sample_collection_date, sample_collection_dates, plate_samples, plate_mode")
     .eq("id", uploadId)
     .eq("project_id", project.id)
     .eq("centre_id", centreId)
@@ -132,6 +138,7 @@ export async function finalizeUploadSubmit(input: FinalizeInput): Promise<Finali
     csvText,
     instrument: isInstrumentId(batch.instrument) ? batch.instrument : "other",
     sampleDates: batchDates(batch),
+    composition: batchComposition(batch),
     runFilename: input.runfile?.originalFilename ?? null,
     centre: input.centre,
     now: input.now,

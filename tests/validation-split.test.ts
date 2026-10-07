@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs"
 import path from "node:path"
 import { beforeAll, describe, expect, it } from "vitest"
-import { presetLayout, type PlateLayout } from "../lib/plate/layout"
+import { SINGLE_SAMPLE, presetLayout, type PlateLayout } from "../lib/plate/layout"
 import { checkRun } from "../lib/upload/run-check"
 import type { CentreFileIdentity } from "../lib/validation/filename"
 import { buildValidationSetup, type ValidationSetup } from "../lib/validation/setup"
@@ -22,7 +22,7 @@ const MUMBAI: CentreFileIdentity = { centreId: "C02", fileCode: "EnvLab_Mumbai" 
 let multipathogen: ValidationSetup
 let environmental: ValidationSetup
 
-/** The layout onboarding builds when "more than one sample per plate" is ticked. */
+/** The plate a centre runs when it picks two samples per plate on upload (the same as expandLayout builds). */
 const twoSamples = (setup: ValidationSetup, mode: "dates" | "sites"): PlateLayout =>
   presetLayout(setup.panel, { unknownReplicates: 3, pc: 1, nc: 1, samples: 2 }, mode)
 
@@ -182,12 +182,15 @@ describe("multiple sites on one plate", () => {
 
 describe("checkRun", () => {
   it("adds the run file check to the split result", () => {
-    const setup = { ...multipathogen, layout: twoSamples(multipathogen, "dates") }
+    // The project's one-sample layout, widened to the upload's composition.
+    const setup = multipathogen
+    const composition = { samples: 2, mode: "dates" } as const
     const ok = checkRun(setup, {
       filename: TWO_DATES,
       csvText: run(TWO_DATES),
       instrument: "quantstudio_5",
       sampleDates: ["2026-10-01", "2026-10-08"],
+      composition,
       runFilename: "C01_HuwelLab_Pune_01102026_08102026.eds",
       centre: PUNE,
       now: NOW,
@@ -200,6 +203,7 @@ describe("checkRun", () => {
       csvText: run(TWO_DATES),
       instrument: "quantstudio_5",
       sampleDates: ["2026-10-01", "2026-10-08"],
+      composition,
       runFilename: "C01_HuwelLab_Pune_01102026.eds",
       centre: PUNE,
       now: NOW,
@@ -214,11 +218,28 @@ describe("checkRun", () => {
       csvText: run(ONE_SAMPLE),
       instrument: "quantstudio_5",
       sampleDates: ["2026-10-01"],
+      composition: SINGLE_SAMPLE,
       runFilename: "C01_HuwelLab_Pune_01102026.eds",
       centre: PUNE,
       now: NOW,
     })
     expect(result).toMatchObject({ passed: true, splitMode: "none", issues: [] })
+  })
+
+  it("refuses a composition whose samples do not fit the project's layout", () => {
+    const crowded = { ...multipathogen, layout: presetLayout(multipathogen.panel, { unknownReplicates: 3, pc: 4, nc: 4 }) }
+    const result = checkRun(crowded, {
+      filename: TWO_DATES,
+      csvText: run(TWO_DATES),
+      instrument: "quantstudio_5",
+      sampleDates: ["2026-10-01", "2026-10-08"],
+      composition: { samples: 2, mode: "dates" },
+      runFilename: "C01_HuwelLab_Pune_01102026_08102026.eds",
+      centre: PUNE,
+      now: NOW,
+    })
+    expect(result.passed).toBe(false)
+    expect(result.issues.map((i) => i.errorCode)).toEqual(["PLATE_COMPOSITION_DOES_NOT_FIT"])
   })
 })
 

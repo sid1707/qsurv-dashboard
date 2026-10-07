@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { summariseKits, type KitRow, type KitSummary } from "@/lib/kits/public"
-import { DEFAULT_COUNTS, parseLayout, presetLayout, type PlateLayout } from "@/lib/plate/layout"
+import { DEFAULT_COUNTS, parseLayout, presetLayout, samplesPerPlate, type PlateLayout } from "@/lib/plate/layout"
 import { defaultRuleSettings, parseRuleSettings, type RuleSettings } from "@/lib/rules/catalog"
 import { buildValidationKit, type KitTargetRow, type ValidationKit } from "./kit"
 
@@ -33,7 +33,13 @@ export function buildValidationSetup(
 
   const stored = project.plate_layout ? parseLayout(project.plate_layout, panel) : null
   if (stored && !stored.ok) notes.push("The project's plate layout does not fit its kit, so the kit's preset layout was used.")
-  const layout = stored?.ok ? stored.data : presetLayout(panel, DEFAULT_COUNTS)
+  let layout = stored?.ok ? stored.data : presetLayout(panel, DEFAULT_COUNTS)
+  // The layout holds one sample; samples per plate are chosen on each upload.
+  // An older layout drawn for several samples becomes the preset for one.
+  if (samplesPerPlate(layout.counts) > 1) {
+    const { unknownReplicates, pc, nc } = layout.counts
+    layout = presetLayout(panel, { unknownReplicates, pc, nc })
+  }
 
   const parsedRules = project.qc_rules ? parseRuleSettings(project.qc_rules, panel, "qc", "qc") : null
   if (parsedRules && !parsedRules.ok) notes.push("The project's quality-check settings were invalid, so the kit defaults were used.")

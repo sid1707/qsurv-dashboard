@@ -216,6 +216,120 @@ export function validateLayout(layout: PlateLayout, kit: Pick<KitPanel, "orienta
   return errors
 }
 
+// ---------- Plate composition: samples per plate, chosen on each upload ----------
+
+/**
+ * What a centre runs on one plate, chosen on each upload as in the AMR portal.
+ * The project's layout holds one sample; the others are placed from it.
+ */
+export type PlateComposition = { samples: number; mode: MultiSampleMode | null }
+
+export const SINGLE_SAMPLE: PlateComposition = { samples: 1, mode: null }
+
+/** Reads a composition from form or JSON input. A missing sample count means one sample. */
+export function parsePlateComposition(samples: unknown, mode: unknown): PlateComposition | null {
+  const n = samples === undefined || samples === null || samples === "" ? 1 : Number(samples)
+  if (!Number.isInteger(n) || n < 1 || n > MAX_SAMPLES_PER_PLATE) return null
+  if (n === 1) return mode === undefined || mode === null || mode === "" ? SINGLE_SAMPLE : null
+  return mode === "dates" || mode === "sites" ? { samples: n, mode } : null
+}
+
+/** Collection dates an upload needs: one per sample on multi-date plates, otherwise one. */
+export const compositionDateCount = (c: PlateComposition) => (c.mode === "dates" ? c.samples : 1)
+
+/** Unknown wells and the sample (1, 2, ...) they show, per plate. */
+export type SampleWells = Record<string, number>
+
+function lanePosition(orientation: LayoutOrientation, well: string) {
+  const row = PLATE_ROWS.indexOf(well[0] as (typeof PLATE_ROWS)[number])
+  const column = Number(well.slice(1)) - 1
+  return orientation === "tubes_in_rows" ? { lane: row, pos: column } : { lane: column, pos: row }
+}
+
+function wellInLane(orientation: LayoutOrientation, lane: number, pos: number) {
+  return orientation === "tubes_in_rows" ? `${PLATE_ROWS[lane]}${pos + 1}` : `${PLATE_ROWS[pos]}${lane + 1}`
+}
+
+/**
+ * The plate for a composition, built from the project's one-sample layout. In
+ * every tube the other samples' replicates follow sample 1's unknown wells and
+ * the wells after them (the controls) move along the tube's row or column, e.g.
+ * S1 S1 S1 S2 S2 S2 PC NC. Null when the extra wells do not fit in the row or
+ * column. The sample numbers only illustrate: a run is split by the samples'
+ * identifiers, not by well.
+ */
+export function expandLayout(
+  base: PlateLayout,
+  composition: PlateComposition
+): { layout: PlateLayout; sampleWells: SampleWells[] } | null {
+  const { orientation } = base
+  const reps = base.counts.unknownReplicates
+  const extra = (composition.samples - 1) * reps
+  const laneLength = layoutGeometry(orientation).wellsPerTube
+
+  const plates: PlateWells[] = []
+  const sampleWells: SampleWells[] = []
+  for (const wells of base.plates) {
+    const taken = new Set(Object.keys(wells))
+    const byTube = new Map<string, string[]>()
+    for (const [id, w] of Object.entries(wells)) byTube.set(w.tube, [...(byTube.get(w.tube) ?? []), id])
+
+    const next: PlateWells = {}
+    const samples: SampleWells = {}
+    for (const [tube, ids] of byTube) {
+      const ordered = ids
+        .map((id) => ({ id, ...lanePosition(orientation, id) }))
+        .sort((a, b) => a.lane - b.lane || a.pos - b.pos)
+      const last = ordered[ordered.length - 1]
+      const free: string[] = []
+      for (let pos = last.pos + 1; pos < laneLength && free.length < extra; pos++) {
+        const id = wellInLane(orientation, last.lane, pos)
+        if (!taken.has(id)) {
+          free.push(id)
+          taken.add(id)
+        }
+      }
+      if (free.length < extra) return null
+
+      const roles = ordered.map((o) => wells[o.id].role)
+      const split = roles.lastIndexOf("unknown") + 1
+      const sequence: { role: WellRole; sample?: number }[] = [
+        ...roles.slice(0, split).map((role) => (role === "unknown" ? { role, sample: 1 } : { role })),
+        ...Array.from({ length: extra }, (_, k) => ({ role: "unknown" as const, sample: 2 + Math.floor(k / reps) })),
+        ...roles.slice(split).map((role) => ({ role })),
+      ]
+      const positions = [...ordered.map((o) => o.id), ...free]
+      sequence.forEach((s, i) => {
+        next[positions[i]] = { tube, role: s.role }
+        if (s.sample) samples[positions[i]] = s.sample
+      })
+    }
+    plates.push(next)
+    sampleWells.push(samples)
+  }
+
+  const counts = { unknownReplicates: reps, pc: base.counts.pc, nc: base.counts.nc }
+  const multi = composition.samples > 1
+  return {
+    layout: {
+      version: 1,
+      orientation,
+      counts: multi ? { ...counts, samples: composition.samples } : counts,
+      plates,
+      ...(multi ? { multiSample: { mode: composition.mode ?? "dates" } } : {}),
+    },
+    sampleWells,
+  }
+}
+
+/** Most samples the layout can carry on one plate (at least 1). */
+export function maxSamplesFor(base: PlateLayout) {
+  for (let n = MAX_SAMPLES_PER_PLATE; n > 1; n--) {
+    if (expandLayout(base, { samples: n, mode: "dates" })) return n
+  }
+  return 1
+}
+
 /** Parses and checks a layout in one go. */
 export function parseLayout(value: unknown, kit: Pick<KitPanel, "orientation" | "tubes">) {
   const parsed = plateLayoutSchema.safeParse(value)

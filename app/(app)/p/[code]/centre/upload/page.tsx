@@ -3,14 +3,12 @@ import { LayoutPreview } from "@/components/plate/layout-preview"
 import { UploadForm } from "@/components/centre/upload-form"
 import { Panel } from "@/components/project-admin/form"
 import { projectCentrePath } from "@/lib/auth/access"
-import { exampleFileName } from "@/lib/centres/file-name"
-import { samplesPerPlate } from "@/lib/plate/layout"
+import { maxSamplesFor } from "@/lib/plate/layout"
 import { requireCentreUser } from "@/lib/projects/context"
 import { CENTRE_PAGES } from "@/lib/projects/features"
 import { INSTRUMENT_PROFILES, instrumentOptionLabel, projectInstruments } from "@/lib/qpcr/instruments"
 import { createClient } from "@/lib/supabase/server"
 import { loadValidationSetup } from "@/lib/validation/setup"
-import { expectedDateCount } from "@/lib/validation/split/router"
 
 export const dynamic = "force-dynamic"
 
@@ -24,11 +22,7 @@ export default async function UploadPage({ params }: { params: Promise<{ code: s
     runfileExtensions: INSTRUMENT_PROFILES[id].runfileExtensions,
     exportHint: INSTRUMENT_PROFILES[id].exportHint,
   }))
-  const plate = {
-    samples: samplesPerPlate(setup.layout.counts),
-    mode: setup.layout.multiSample?.mode ?? null,
-    dateCount: expectedDateCount(setup.layout),
-  }
+  const plate = { tubes: setup.panel.tubes, layout: setup.layout, maxSamples: maxSamplesFor(setup.layout) }
 
   return (
     <div className="space-y-6">
@@ -53,7 +47,7 @@ export default async function UploadPage({ params }: { params: Promise<{ code: s
             projectCode={project.code}
             instruments={instruments}
             uploadsHref={projectCentrePath(project.code, "uploads")}
-            fileNameExample={exampleFileName({ centreId: centre.code, fileCode: centre.file_code }, plate.dateCount)}
+            fileIdentity={{ centreId: centre.code, fileCode: centre.file_code }}
             plate={plate}
           />
         )}
@@ -63,7 +57,7 @@ export default async function UploadPage({ params }: { params: Promise<{ code: s
         <div className="space-y-6">
           <KitPanelTable tubes={setup.panel.tubes} caption={`${setup.panel.name} (${setup.panel.version})`} />
           <div>
-            <h4 className="mb-2 text-sm font-medium">Plate layout</h4>
+            <h4 className="mb-2 text-sm font-medium">Plate layout (one sample per plate)</h4>
             <LayoutPreview tubes={setup.panel.tubes} layout={setup.layout} />
           </div>
         </div>

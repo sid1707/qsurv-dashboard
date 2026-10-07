@@ -1,6 +1,7 @@
 // From vrdl-next-platform lib/upload/client-types.ts.
 
 import type { ValidationIssue } from "@/lib/validation/types"
+import type { MultiSampleMode } from "@/lib/plate/layout"
 import type { InstrumentId } from "@/lib/qpcr/instruments"
 
 export type { ValidationIssue }
@@ -25,6 +26,9 @@ export type UploadFormMetadata = {
   instrument: InstrumentId
   /** ISO dates: one per sample on multi-date plates, otherwise one. */
   sampleCollectionDates: string[]
+  /** Plate composition: samples on the plate, and "dates" or "sites" when there are several. */
+  plateSamples: number
+  plateMode: MultiSampleMode | null
   notes: string | null
 }
 

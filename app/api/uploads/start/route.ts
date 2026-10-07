@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server"
+import { compositionDateCount, expandLayout, parsePlateComposition } from "@/lib/plate/layout"
 import { isInstrumentId } from "@/lib/qpcr/instruments"
 import { forbiddenFromAuth, jsonError, logUploadStage, readJson } from "@/lib/upload/api"
 import { getCentreUploadContext, parseSampleDates } from "@/lib/upload/centre-context"
 import { loadValidationSetup } from "@/lib/validation/setup"
-import { expectedDateCount } from "@/lib/validation/split/router"
 import { NOTES_MAX_LENGTH } from "@/lib/upload/client-types"
 
 type StartBody = {
@@ -11,6 +11,10 @@ type StartBody = {
   instrument?: string
   /** One per sample on multi-date plates, otherwise one. */
   sampleCollectionDates?: string[]
+  /** Samples on the plate (1 to 3); absent means one. */
+  plateSamples?: number
+  /** "dates" or "sites" when there are several samples. */
+  plateMode?: string | null
   notes?: string | null
 }
 
@@ -30,8 +34,19 @@ export async function POST(request: Request) {
   if (!sampleDates) {
     return jsonError(400, { message: "Enter the sample collection date(s) as DD/MM/YYYY.", code: "MISSING_FIELD", stage: "start" })
   }
+  const composition = parsePlateComposition(body.plateSamples, body.plateMode)
+  if (!composition) {
+    return jsonError(400, { message: "Choose the plate composition.", code: "INVALID_PLATE_COMPOSITION", stage: "start" })
+  }
   const setup = await loadValidationSetup(context.supabase, context.project)
-  const needed = expectedDateCount(setup.layout)
+  if (!expandLayout(setup.layout, composition)) {
+    return jsonError(400, {
+      message: `${composition.samples} samples do not fit on one plate with this project's layout. Choose fewer samples per plate.`,
+      code: "PLATE_COMPOSITION_DOES_NOT_FIT",
+      stage: "start",
+    })
+  }
+  const needed = compositionDateCount(composition)
   if (sampleDates.length !== needed) {
     return jsonError(400, {
       message: needed === 1 ? "Enter one sample collection date." : `Enter ${needed} different collection dates, one per sample on the plate.`,
@@ -52,6 +67,8 @@ export async function POST(request: Request) {
       instrument: body.instrument,
       sample_collection_date: sampleDates[0],
       sample_collection_dates: sampleDates,
+      plate_samples: composition.samples,
+      plate_mode: composition.mode,
       notes,
       upload_status: "draft",
       approval_status: "pending",

@@ -87,7 +87,9 @@ export async function loadKit(supabase: SupabaseClient, kitId: string): Promise<
  * kit's tubes would not be valid for the new one.
  */
 export function kitChangeDefaults(kit: KitSummary, current: PlateLayout | null) {
-  const counts = current?.counts && countsFit(kit, current.counts) ? current.counts : DEFAULT_COUNTS
+  // One sample per plate: centres choose the samples per plate on each upload.
+  const base = current?.counts && { unknownReplicates: current.counts.unknownReplicates, pc: current.counts.pc, nc: current.counts.nc }
+  const counts = base && countsFit(kit, base) ? base : DEFAULT_COUNTS
   return {
     plateLayout: presetLayout(kit, counts),
     qcRules: defaultRuleSettings(kit, "qc"),

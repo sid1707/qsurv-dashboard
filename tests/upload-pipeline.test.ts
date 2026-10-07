@@ -115,11 +115,11 @@ describe("finalizeUploadSubmit", () => {
   })
 
   it("stores one file per sample for a multi-date plate and records the split", async () => {
-    const { presetLayout } = await import("../lib/plate/layout")
-    const twoDates = { ...setup, layout: presetLayout(setup.panel, { unknownReplicates: 3, pc: 1, nc: 1, samples: 2 }, "dates") }
+    // The batch carries the composition chosen on upload; the project's layout holds one sample.
+    const twoDates = setup
     const c = clients({
       csv: readFileSync(path.join(RUNS, TWO_DATES_FILE), "utf8"),
-      batch: { id: UPLOAD, upload_status: "draft", instrument: "quantstudio_5", sample_collection_date: "2026-10-01", sample_collection_dates: ["2026-10-01", "2026-10-08"] },
+      batch: { id: UPLOAD, upload_status: "draft", instrument: "quantstudio_5", sample_collection_date: "2026-10-01", sample_collection_dates: ["2026-10-01", "2026-10-08"], plate_samples: 2, plate_mode: "dates" },
     })
     const result = await finalizeUploadSubmit(
       input(c, {
@@ -144,14 +144,14 @@ describe("finalizeUploadSubmit", () => {
   })
 
   it("rejects a sample already uploaded in an earlier multi-sample run", async () => {
-    const { presetLayout } = await import("../lib/plate/layout")
-    const twoDates = { ...setup, layout: presetLayout(setup.panel, { unknownReplicates: 3, pc: 1, nc: 1, samples: 2 }, "dates") }
+    // The batch carries the composition chosen on upload; the project's layout holds one sample.
+    const twoDates = setup
     const c = clients({
       csv: readFileSync(path.join(RUNS, TWO_DATES_FILE), "utf8"),
-      batch: { id: UPLOAD, upload_status: "draft", instrument: "quantstudio_5", sample_collection_date: "2026-10-01", sample_collection_dates: ["2026-10-01", "2026-10-08"] },
+      batch: { id: UPLOAD, upload_status: "draft", instrument: "quantstudio_5", sample_collection_date: "2026-10-01", sample_collection_dates: ["2026-10-01", "2026-10-08"], plate_samples: 2, plate_mode: "dates" },
     })
     const userWithPeers = fakeSupabase({
-      "upload_batches.select": { data: { id: UPLOAD, upload_status: "draft", instrument: "quantstudio_5", sample_collection_date: "2026-10-01", sample_collection_dates: ["2026-10-01", "2026-10-08"] } },
+      "upload_batches.select": { data: { id: UPLOAD, upload_status: "draft", instrument: "quantstudio_5", sample_collection_date: "2026-10-01", sample_collection_dates: ["2026-10-01", "2026-10-08"], plate_samples: 2, plate_mode: "dates" } },
       "upload_files.select": { data: [] },
       "upload_split_artifacts.select": {
         data: [{ display_filename: "C01_HuwelLab_Pune_081026.csv", collection_date: "2026-10-08", upload_batches: { upload_status: "uploaded", is_active: true } }],

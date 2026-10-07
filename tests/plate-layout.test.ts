@@ -1,8 +1,13 @@
 import { describe, expect, it } from "vitest"
 import type { KitPanel, KitTube } from "../lib/kits/public"
 import {
+  SINGLE_SAMPLE,
+  compositionDateCount,
   countRolesByTube,
+  expandLayout,
   layoutCapacity,
+  maxSamplesFor,
+  parsePlateComposition,
   paintWell,
   parseLayout,
   platesNeeded,
@@ -136,6 +141,67 @@ describe("several samples on one plate", () => {
     const k = kit(1, "tubes_in_rows")
     const short = paintWell(presetLayout(k, two), 0, "A6", null)
     expect(validateLayout(short, k)).toEqual(["T1 has 5 unknown (expected 6)."])
+  })
+
+  it("builds the same plate from a one-sample layout as the preset for two samples", () => {
+    const k = kit(8, "tubes_in_rows")
+    const expanded = expandLayout(presetLayout(k, counts), { samples: 2, mode: "sites" })
+    expect(expanded?.layout).toEqual(presetLayout(k, two, "sites"))
+  })
+
+  it("labels sample 1 and sample 2 wells, with the controls moved after them", () => {
+    const k = kit(2, "tubes_in_columns")
+    const expanded = expandLayout(presetLayout(k, counts), { samples: 2, mode: "dates" })!
+    const plate = expanded.layout.plates[0]
+    expect(["A1", "B1", "C1"].map((w) => expanded.sampleWells[0][w])).toEqual([1, 1, 1])
+    expect(["D1", "E1", "F1"].map((w) => expanded.sampleWells[0][w])).toEqual([2, 2, 2])
+    expect(plate.G1).toEqual({ tube: "T1", role: "pc" })
+    expect(plate.H1).toEqual({ tube: "T1", role: "nc" })
+    expect(expanded.sampleWells[0].G1).toBeUndefined()
+    expect(validateLayout(expanded.layout, k)).toEqual([])
+    expect(parseLayout(expanded.layout, k).ok).toBe(true)
+  })
+
+  it("keeps a hand-drawn order of controls and unknowns", () => {
+    const k = kit(1, "tubes_in_rows")
+    // NC first, then unknowns, then PC.
+    let layout = presetLayout(k, counts)
+    layout = paintWell(layout, 0, "A1", { tube: "T1", role: "nc" })
+    layout = paintWell(layout, 0, "A4", { tube: "T1", role: "unknown" })
+    layout = paintWell(layout, 0, "A5", { tube: "T1", role: "pc" })
+    const plate = expandLayout(layout, { samples: 2, mode: "dates" })!.layout.plates[0]
+    expect(["A1", "A2", "A3", "A4", "A5", "A6", "A7", "A8"].map((w) => plate[w].role)).toEqual([
+      "nc", "unknown", "unknown", "unknown", "unknown", "unknown", "unknown", "pc",
+    ])
+  })
+
+  it("returns null when the extra replicates do not fit in the row or column", () => {
+    const k = kit(10, "tubes_in_columns")
+    const base = presetLayout(k, counts)
+    expect(expandLayout(base, { samples: 2, mode: "dates" })).not.toBeNull()
+    expect(expandLayout(base, { samples: 3, mode: "dates" })).toBeNull()
+    expect(maxSamplesFor(base)).toBe(2)
+    expect(maxSamplesFor(presetLayout(kit(8, "tubes_in_rows"), counts))).toBe(3)
+    expect(maxSamplesFor(presetLayout(k, { unknownReplicates: 3, pc: 2, nc: 2 }))).toBe(1)
+  })
+
+  it("leaves a single-sample composition unchanged", () => {
+    const k = kit(8, "tubes_in_rows")
+    const base = presetLayout(k, counts)
+    expect(expandLayout(base, SINGLE_SAMPLE)?.layout).toEqual(base)
+  })
+
+  it("reads a plate composition from upload input", () => {
+    expect(parsePlateComposition(undefined, undefined)).toEqual(SINGLE_SAMPLE)
+    expect(parsePlateComposition("1", null)).toEqual(SINGLE_SAMPLE)
+    expect(parsePlateComposition("2", "sites")).toEqual({ samples: 2, mode: "sites" })
+    expect(parsePlateComposition(3, "dates")).toEqual({ samples: 3, mode: "dates" })
+    expect(parsePlateComposition("2", null)).toBeNull()
+    expect(parsePlateComposition("1", "dates")).toBeNull()
+    expect(parsePlateComposition("4", "dates")).toBeNull()
+    expect(parsePlateComposition("x", null)).toBeNull()
+    expect(compositionDateCount({ samples: 3, mode: "dates" })).toBe(3)
+    expect(compositionDateCount({ samples: 2, mode: "sites" })).toBe(1)
   })
 
   it("needs the dates-or-sites choice whenever there are several samples", () => {

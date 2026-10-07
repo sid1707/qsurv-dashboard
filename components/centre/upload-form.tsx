@@ -1,8 +1,9 @@
 "use client"
 
 // Adapted from vrdl-next-platform app/(vrdl)/uploads/upload-form.tsx. The AMR
-// form's VRDL fields and plate compositions are replaced by the project's
-// instrument(s); the kit and plate layout come from the project.
+// form's VRDL fields are replaced by the project's instrument(s); the kit and
+// one-sample plate layout come from the project, and the plate composition
+// (samples per plate, multiple dates or sites) is chosen here as in the AMR form.
 
 import { type FormEvent, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
@@ -12,7 +13,18 @@ import { Field, inputClass, textareaClass } from "@/components/project-admin/for
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { DmyDateInput } from "@/components/ui/dmy-date-input"
-import { SAMPLE_IDENTIFIER_COLUMNS, type MultiSampleMode } from "@/lib/plate/layout"
+import { LayoutPreview } from "@/components/plate/layout-preview"
+import { exampleFileName } from "@/lib/centres/file-name"
+import type { KitTube } from "@/lib/kits/public"
+import {
+  MULTI_SAMPLE_MODES,
+  SAMPLE_IDENTIFIER_COLUMNS,
+  SINGLE_SAMPLE,
+  compositionDateCount,
+  expandLayout,
+  type PlateComposition,
+  type PlateLayout,
+} from "@/lib/plate/layout"
 import type { InstrumentId } from "@/lib/qpcr/instruments"
 import { buildValidateFormData, runUploadPipeline, validateResultsOnly } from "@/lib/upload/client"
 import { NOTES_MAX_LENGTH, type UploadFormMetadata, type UploadPipelineStage } from "@/lib/upload/client-types"
@@ -34,26 +46,39 @@ export type InstrumentOption = { id: InstrumentId; label: string; runfileExtensi
 const chooseFileButtonClass =
   "inline-flex h-8 items-center rounded-lg border bg-muted px-3 text-sm font-medium hover:bg-muted/70"
 
-/** What the project's plate layout means for this form. */
+/** The project's one-sample plate layout, which each upload's plate composition builds on. */
 export type PlatePlan = {
-  samples: number
-  mode: MultiSampleMode | null
-  /** Collection dates to ask for: one per sample on multi-date plates. */
-  dateCount: number
+  tubes: KitTube[]
+  layout: PlateLayout
+  /** Most samples that fit on one plate with this layout. */
+  maxSamples: number
+}
+
+/** The plate compositions offered, as in the AMR portal's dropdown. */
+function compositionOptions(maxSamples: number) {
+  const options: { value: string; label: string; composition: PlateComposition }[] = [
+    { value: "1", label: "Single sample", composition: SINGLE_SAMPLE },
+  ]
+  for (let n = 2; n <= maxSamples; n++) {
+    for (const m of MULTI_SAMPLE_MODES) {
+      options.push({ value: `${n}:${m.value}`, label: `${n} samples, ${m.label.toLowerCase()}`, composition: { samples: n, mode: m.value } })
+    }
+  }
+  return options
 }
 
 export function UploadForm({
   projectCode,
   instruments,
   uploadsHref,
-  fileNameExample,
+  fileIdentity,
   plate,
 }: {
   projectCode: string
   instruments: InstrumentOption[]
   uploadsHref: string
-  /** e.g. C01_AIIMS_NewDelhi_DDMMYY.csv */
-  fileNameExample: string
+  /** The centre's ID and file code, for the example file name (e.g. C01_AIIMS_NewDelhi_DDMMYY.csv). */
+  fileIdentity: { centreId: string; fileCode: string }
   plate: PlatePlan
 }) {
   const router = useRouter()
@@ -71,7 +96,14 @@ export function UploadForm({
   const [details, setDetails] = useState<string[]>([])
   const [warningOpen, setWarningOpen] = useState(false)
 
+  const [compositionValue, setCompositionValue] = useState("1")
+
   const instrument = instruments.find((i) => i.id === instrumentId) ?? instruments[0]
+  const options = compositionOptions(plate.maxSamples)
+  const composition = (options.find((o) => o.value === compositionValue) ?? options[0]).composition
+  const dateCount = compositionDateCount(composition)
+  const fileNameExample = exampleFileName(fileIdentity, dateCount)
+  const expanded = composition.samples > 1 ? expandLayout(plate.layout, composition) : null
 
   function applyIssues(issues: ValidationIssue[], d: string[] = []) {
     const split = splitValidationIssues(issues)
@@ -93,19 +125,31 @@ export function UploadForm({
     const notes = form.querySelector<HTMLTextAreaElement>('textarea[name="notes"]')?.value.trim() || null
     if (!results) return { ok: false, message: "Choose the results export (.csv)." }
     if (!run) return { ok: false, message: `Choose the run file (${instrument.runfileExtensions.join(" or ")}).` }
-    if (sampleCollectionDates.length !== plate.dateCount || sampleCollectionDates.some((d) => !d)) {
+    if (sampleCollectionDates.length !== dateCount || sampleCollectionDates.some((d) => !d)) {
       return {
         ok: false,
         message:
-          plate.dateCount === 1
+          dateCount === 1
             ? "Enter the sample collection date as DD/MM/YYYY."
-            : `Enter all ${plate.dateCount} collection dates as DD/MM/YYYY.`,
+            : `Enter all ${dateCount} collection dates as DD/MM/YYYY.`,
       }
     }
     if (new Set(sampleCollectionDates).size !== sampleCollectionDates.length) {
       return { ok: false, message: "Each sample on the plate needs a different collection date." }
     }
-    return { ok: true, results, run, metadata: { projectCode, instrument: instrumentId, sampleCollectionDates, notes } }
+    return {
+      ok: true,
+      results,
+      run,
+      metadata: {
+        projectCode,
+        instrument: instrumentId,
+        sampleCollectionDates,
+        plateSamples: composition.samples,
+        plateMode: composition.mode,
+        notes,
+      },
+    }
   }
 
   async function upload(form: HTMLFormElement, warningAcknowledged: boolean) {
@@ -214,11 +258,30 @@ export function UploadForm({
               </select>
             )}
           </Field>
-          {Array.from({ length: plate.dateCount }, (_, i) => (
+          <Field
+            id="upload-composition"
+            label="Plate composition"
+            hint={plate.maxSamples < 2 ? "(the project's layout leaves no room for a second sample)" : undefined}
+          >
+            <select
+              id="upload-composition"
+              value={compositionValue}
+              disabled={busy}
+              onChange={(e) => setCompositionValue(e.target.value)}
+              className={inputClass}
+            >
+              {options.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </Field>
+          {Array.from({ length: dateCount }, (_, i) => (
             <Field
-              key={i}
+              key={`${dateCount}-${i}`}
               id={`upload-date-${i}`}
-              label={plate.dateCount === 1 ? "Sample collection date" : `Collection date, sample ${i + 1}`}
+              label={dateCount === 1 ? "Sample collection date" : `Collection date, sample ${i + 1}`}
             >
               <DmyDateInput id={`upload-date-${i}`} name={`sampleCollectionDate${i + 1}`} required />
             </Field>
@@ -228,22 +291,33 @@ export function UploadForm({
         <div className="space-y-2 rounded-md border bg-muted/40 p-3 text-xs">
           <p>
             Name both files <span className="font-mono">{fileNameExample}</span>
-            {plate.dateCount > 1 ? ", with one date per sample" : ""} (DDMMYYYY also works). The run file needs the same
+            {dateCount > 1 ? ", with one date per sample" : ""} (DDMMYYYY also works). The run file needs the same
             dates.
           </p>
-          {plate.samples > 1 ? (
+          {composition.samples > 1 ? (
             <p>
-              This project runs {plate.samples} samples per plate (
-              {plate.mode === "sites" ? "multiple sites" : "multiple dates"}). The file is split into one file per
+              This plate carries {composition.samples} samples (
+              {composition.mode === "sites" ? "multiple sites" : "multiple dates"}). The file is split into one file per
               sample, so each sample&apos;s identifier must be in the {SAMPLE_IDENTIFIER_COLUMNS.join(", ").replace(/, ([^,]*)$/, " or $1")}{" "}
               column:{" "}
-              {plate.mode === "sites"
+              {composition.mode === "sites"
                 ? "a site label (e.g. ETP, STP) that is the same in all of that sample's wells."
                 : "the sample's collection date as DDMMYY or DDMMYYYY (e.g. 01102026, or WW_01102026)."}
             </p>
           ) : null}
           <p className="text-muted-foreground">{instrument.exportHint}</p>
         </div>
+
+        {expanded ? (
+          <details open className="rounded-md border p-3">
+            <summary className="cursor-pointer text-sm font-medium">
+              Plate layout with {composition.samples} samples
+            </summary>
+            <div className="mt-3">
+              <LayoutPreview tubes={plate.tubes} layout={expanded.layout} sampleWells={expanded.sampleWells} />
+            </div>
+          </details>
+        ) : null}
 
         <div className="space-y-1 text-sm">
           <span className="font-medium">Results export (.csv)</span>

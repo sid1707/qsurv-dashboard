@@ -1,6 +1,6 @@
 import { z } from "zod"
 import type { KitPanel } from "@/lib/kits/public"
-import { parseLayout, type PlateLayout } from "@/lib/plate/layout"
+import { parseLayout, samplesPerPlate, type PlateLayout } from "@/lib/plate/layout"
 import { parseRuleSettings, type RuleSettings } from "@/lib/rules/catalog"
 
 // Option lists for the onboarding form. Keys match the check constraints in
@@ -190,9 +190,12 @@ const field = (values: unknown, key: string) =>
 const checkLayout: StepCheck = (values, kit) => {
   if (!kit) return NO_KIT
   const result = parseLayout(field(values, "plateLayout"), kit)
-  return result.ok
-    ? { ok: true, data: { plateLayout: result.data } }
-    : { ok: false, errors: { plateLayout: result.errors.join(" ") } }
+  if (!result.ok) return { ok: false, errors: { plateLayout: result.errors.join(" ") } }
+  // Samples per plate are chosen by centres on each upload, not here.
+  if (samplesPerPlate(result.data.counts) > 1) {
+    return { ok: false, errors: { plateLayout: "Set up the layout for one sample per plate." } }
+  }
+  return { ok: true, data: { plateLayout: result.data } }
 }
 
 const checkRules: StepCheck = (values, kit) => {

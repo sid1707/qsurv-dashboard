@@ -1,7 +1,8 @@
 /**
  * From vrdl-next-platform src/lib/split/router.ts (runSplitValidation) and
- * aggregate-validation.ts. The AMR plate composition dropdown becomes the
- * project's plate layout: one sample per plate (no split), several samples from
+ * aggregate-validation.ts. As in the AMR portal, the centre picks the plate
+ * composition on each upload; the layout passed here is the project's layout
+ * widened to it (expandLayout): one sample per plate (no split), several samples from
  * several dates (split by the date in each sample's identifier), or several
  * sites on one date (split by each sample's identifier).
  *
@@ -107,7 +108,7 @@ export function runSplitValidation(input: SplitValidationInput): SplitValidation
           errorMessage:
             needed === 1
               ? "Enter one sample collection date."
-              : `This project's plates carry ${needed} samples from different dates: enter ${needed} different collection dates.`,
+              : `This plate carries ${needed} samples from different dates: enter ${needed} different collection dates.`,
         }),
       ],
     }
@@ -125,7 +126,7 @@ export function runSplitValidation(input: SplitValidationInput): SplitValidation
               rowNumber: null,
               fieldName: "csv",
               errorCode: "MULTIPLE_SAMPLES_SINGLE_PLATE",
-              errorMessage: `This CSV contains ${groups} ETP/STP groups but the project's plate layout has one sample per plate.`,
+              errorMessage: `This CSV contains ${groups} ETP/STP groups but the plate composition is a single sample. Choose multiple sites in Plate composition.`,
             }),
           ],
         }

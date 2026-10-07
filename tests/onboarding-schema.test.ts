@@ -71,6 +71,12 @@ describe("onboarding schema", () => {
     expect(result.errors.plateLayout).toMatch(/NVK has 3 unknown \(expected 3\)|NVK has 0 positive control/)
   })
 
+  it("takes a one-sample layout only: centres choose samples per plate on upload", () => {
+    const twoSamples = presetLayout(KIT, { ...COUNTS, samples: 2 }, "dates")
+    const result = validateStep(STEP.layout, validValues({ plateLayout: twoSamples }), KIT)
+    expect(result.errors.plateLayout).toBe("Set up the layout for one sample per plate.")
+  })
+
   it("needs a kit to check the layout and rules", () => {
     expect(validateStep(STEP.layout, validValues(), null).errors).toHaveProperty("kitId")
     expect(validateStep(STEP.rules, validValues(), null).errors).toHaveProperty("kitId")

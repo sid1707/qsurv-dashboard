@@ -62,6 +62,8 @@ export function buildValidateFormData(results: File, runFilename: string, metada
   fd.append("runFilename", runFilename)
   fd.append("instrument", metadata.instrument)
   for (const date of metadata.sampleCollectionDates) fd.append("sampleCollectionDates", date)
+  fd.append("plateSamples", String(metadata.plateSamples))
+  if (metadata.plateMode) fd.append("plateMode", metadata.plateMode)
   return fd
 }
 

@@ -116,10 +116,6 @@ describe("POST /api/uploads/validate", () => {
 
 describe("POST /api/uploads/validate (multi-sample plates)", () => {
   it("blocks a run without sample identifiers and returns the reason to the form", async () => {
-    const setup = buildValidationSetup(kitRow, { plate_layout: null, qc_rules: null })
-    const { presetLayout } = await import("../lib/plate/layout")
-    mocks.setup.mockResolvedValue({ ...setup, layout: presetLayout(setup.panel, { unknownReplicates: 3, pc: 1, nc: 1, samples: 2 }, "dates") })
-
     const name = "C01_HuwelLab_Pune_01102026_08102026_two-dates.csv"
     const csv = readFileSync(path.join(RUNS, name), "utf8").replaceAll(",WW_01102026,", ",WW,").replaceAll(",WW_08102026,", ",WW,")
     const form = new FormData()
@@ -129,6 +125,8 @@ describe("POST /api/uploads/validate (multi-sample plates)", () => {
     form.set("instrument", "quantstudio_5")
     form.append("sampleCollectionDates", "01/10/2026")
     form.append("sampleCollectionDates", "08/10/2026")
+    form.set("plateSamples", "2")
+    form.set("plateMode", "dates")
     const res = await validate(new Request("http://localhost/api/uploads/validate", { method: "POST", body: form }))
 
     expect(res.status).toBe(200)
@@ -136,21 +134,36 @@ describe("POST /api/uploads/validate (multi-sample plates)", () => {
     expect(body).toMatchObject({ passed: false, hasBlockingErrors: true, errorCount: 1 })
     expect(body.issues[0]).toMatchObject({ errorCode: "NO_IDENTIFIER_DATES", severity: "error" })
   })
+
+  it("refuses an incomplete plate composition", async () => {
+    const res = await validate(validateRequest("C01_HuwelLab_Pune_01102026_quantstudio5.csv", { plateSamples: "2" }))
+    expect(res.status).toBe(400)
+    expect(await res.json()).toMatchObject({ code: "INVALID_PLATE_COMPOSITION" })
+  })
 })
 
 describe("POST /api/uploads/start (dates)", () => {
-  it("asks for one date per sample when plates carry samples from several dates", async () => {
-    const setup = buildValidationSetup(kitRow, { plate_layout: null, qc_rules: null })
-    const { presetLayout } = await import("../lib/plate/layout")
-    mocks.setup.mockResolvedValue({ ...setup, layout: presetLayout(setup.panel, { unknownReplicates: 3, pc: 1, nc: 1, samples: 2 }, "dates") })
-    const res = await start(
+  const startWith = (body: object) =>
+    start(
       new Request("http://localhost/api/uploads/start", {
         method: "POST",
-        body: JSON.stringify({ projectCode: "HMP-PUNE", instrument: "quantstudio_5", sampleCollectionDates: ["01/10/2026"] }),
+        body: JSON.stringify({ projectCode: "HMP-PUNE", instrument: "quantstudio_5", ...body }),
       })
     )
+
+  it("asks for one date per sample when the plate carries samples from several dates", async () => {
+    const res = await startWith({ sampleCollectionDates: ["01/10/2026"], plateSamples: 2, plateMode: "dates" })
     expect(res.status).toBe(400)
     expect(await res.json()).toMatchObject({ code: "MISSING_PLATE_DATES", message: "Enter 2 different collection dates, one per sample on the plate." })
+  })
+
+  it("refuses more samples than fit the project's layout", async () => {
+    const setup = buildValidationSetup(kitRow, { plate_layout: null, qc_rules: null })
+    const { presetLayout } = await import("../lib/plate/layout")
+    mocks.setup.mockResolvedValue({ ...setup, layout: presetLayout(setup.panel, { unknownReplicates: 3, pc: 4, nc: 4 }) })
+    const res = await startWith({ sampleCollectionDates: ["01/10/2026"], plateSamples: 2, plateMode: "sites" })
+    expect(res.status).toBe(400)
+    expect(await res.json()).toMatchObject({ code: "PLATE_COMPOSITION_DOES_NOT_FIT" })
   })
 
   it("refuses a centre without a centre ID", async () => {

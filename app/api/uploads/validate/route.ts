@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server"
+import { parsePlateComposition } from "@/lib/plate/layout"
 import { isInstrumentId } from "@/lib/qpcr/instruments"
 import { forbiddenFromAuth, jsonError, logUploadStage } from "@/lib/upload/api"
 import { centreIdentity, getCentreUploadContext, parseSampleDates } from "@/lib/upload/centre-context"
@@ -35,12 +36,18 @@ export async function POST(request: Request) {
     return jsonError(400, { message: "Enter the sample collection date(s) as DD/MM/YYYY.", code: "MISSING_FIELD", stage: "validate" })
   }
 
+  const composition = parsePlateComposition(form.get("plateSamples"), form.get("plateMode"))
+  if (!composition) {
+    return jsonError(400, { message: "Choose the plate composition.", code: "INVALID_PLATE_COMPOSITION", stage: "validate" })
+  }
+
   const setup = await loadValidationSetup(context.supabase, context.project)
   const result = checkRun(setup, {
     filename: file.name,
     csvText: await file.text(),
     instrument,
     sampleDates,
+    composition,
     runFilename: String(form.get("runFilename") ?? "") || null,
     centre: centreIdentity(context.centre),
   })

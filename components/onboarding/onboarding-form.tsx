@@ -23,19 +23,22 @@ import {
   type FieldErrors,
   type OnboardingValues,
 } from "@/lib/onboarding/schema"
-import { DEFAULT_COUNTS, presetLayout } from "@/lib/plate/layout"
+import { DEFAULT_COUNTS, countsFit, presetLayout, samplesPerPlate } from "@/lib/plate/layout"
 import { defaultRuleSettings } from "@/lib/rules/catalog"
 import { cn } from "@/lib/utils"
 
 /**
  * Fills in the plate layout and rules from the kit when they are missing or were
- * made for a different layout orientation (e.g. a restored draft).
+ * made for a different layout orientation or for several samples per plate
+ * (e.g. a restored draft; samples per plate are now chosen on each upload).
  */
 function withKitDefaults(values: OnboardingValues, kit: KitSummary | null): OnboardingValues {
   if (!kit) return values
   const next = { ...values }
-  if (!next.plateLayout || next.plateLayout.orientation !== kit.orientation) {
-    next.plateLayout = presetLayout(kit, next.plateLayout?.counts ?? DEFAULT_COUNTS)
+  const current = next.plateLayout
+  if (!current || current.orientation !== kit.orientation || samplesPerPlate(current.counts) > 1) {
+    const counts = current ? { unknownReplicates: current.counts.unknownReplicates, pc: current.counts.pc, nc: current.counts.nc } : DEFAULT_COUNTS
+    next.plateLayout = presetLayout(kit, countsFit(kit, counts) ? counts : DEFAULT_COUNTS)
   }
   if (Object.keys(next.qcRules).length === 0) next.qcRules = defaultRuleSettings(kit, "qc")
   if (Object.keys(next.compileRules).length === 0) next.compileRules = defaultRuleSettings(kit, "compile")
